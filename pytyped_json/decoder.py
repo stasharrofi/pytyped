@@ -2,6 +2,7 @@ from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
 from datetime import date
 from datetime import datetime
+from dateutil import parser
 from decimal import Decimal
 from typing import Tuple
 from typing import cast
@@ -335,7 +336,7 @@ class JsonDateDecoder(JsonDecoder[date]):
         if isinstance(string_or_error, Boxed):
             s = string_or_error.t
             try:
-                return Boxed(date.fromisoformat(s))
+                return Boxed(parser.isoparse(s).date())
             except ValueError:
                 return [
                     JsDecodeErrorFinal(
@@ -356,7 +357,7 @@ class JsonDatetimeDecoder(JsonDecoder[datetime]):
         if isinstance(string_or_error, Boxed):
             s = string_or_error.t
             try:
-                return Boxed(datetime.fromisoformat(s))
+                return Boxed(parser.isoparse(s))
             except ValueError:
                 return [
                     JsDecodeErrorFinal(
