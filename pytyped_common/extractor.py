@@ -296,8 +296,9 @@ class Extractor(Generic[T], metaclass=ABCMeta):
             raise UnknownExtractorException(t)
 
         self._context = old_context
-        if t not in self.memoized:
-            self.memoized[(t, self.assignments(t))] = result
+        t_assignments = self.assignments(t)
+        if (t, t_assignments) not in self.memoized:
+            self.memoized[(t, t_assignments)] = result
         return result.t
 
     def extract(self, in_typ: type) -> T:

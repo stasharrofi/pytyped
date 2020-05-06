@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum
-from typing import cast
+from typing import cast, Tuple
 from typing import Any
 from typing import Dict
 from typing import Generic
@@ -14,7 +14,7 @@ from typing import TypeVar
 from typing import Union
 
 from pytyped_common.boxed import Boxed
-from pytyped_common import extractor
+from pytyped_common.extractor import Extractor, WithDefault
 from pytyped_json.common import JsValue
 
 T = TypeVar("T")
@@ -101,43 +101,40 @@ class JsonEnumEncoder(JsonEncoder[Enum]):
         return str(t.value)
 
 
-class AutoJsonEncoder:
+class AutoJsonEncoder(Extractor[JsonEncoder[Any]]):
     json_basic_encoder: JsonBasicEncoder = JsonBasicEncoder()
     json_decimal_encoder: JsonDecimalEncoder = JsonDecimalEncoder()
     json_date_encoder: JsonDateEncoder = JsonDateEncoder()
+    json_enum_encoder: JsonEnumEncoder = JsonEnumEncoder()
 
-    def build_encoder(
-        self, in_typ: type, special_encoders: Dict[type, JsonEncoder[Any]] = {}
-    ) -> JsonEncoder[Any]:
+    basic_encoders: Dict[type, Boxed[JsonEncoder[Any]]] = {
+        bool: Boxed(json_basic_encoder),
+        str: Boxed(json_basic_encoder),
+        int: Boxed(json_basic_encoder),
+        Decimal: Boxed(json_decimal_encoder),
+        datetime: Boxed(json_date_encoder),
+        date: Boxed(json_date_encoder)
+    }
 
-        basic_encoders = self.__build_basic_encoders()
+    @property
+    def basics(self) -> Dict[type, Boxed[JsonEncoder[Any]]]:
+        return self.basic_encoders
 
-        return extractor.auto_extractor(
-            in_typ=in_typ,
-            basics={n: Boxed(d) for (n, d) in basic_encoders.items()},
-            specials={n: Boxed(d) for (n, d) in special_encoders.items()},
-            product_extractor=self.__product_extractor,
-            optional_extractor=lambda d: JsonOptionalEncoder(d),
-            list_extractor=lambda d: JsonListEncoder(d),
-            enum_extractor=lambda name, values: JsonEnumEncoder(),
-        )
-
-    def __build_basic_encoders(self) -> Dict[type, JsonEncoder[Any]]:
-        return {
-            bool: self.json_basic_encoder,
-            str: self.json_basic_encoder,
-            int: self.json_basic_encoder,
-            Decimal: self.json_decimal_encoder,
-            datetime: self.json_date_encoder,
-            date: self.json_date_encoder,
-        }
-
-    def __product_extractor(
-        self,
-        named_tuple: type,
-        fields: Dict[str, extractor.WithDefault[JsonEncoder[Any]]],
-    ) -> JsonObjectEncoder[Any]:
+    def product_extractor(self, t: type, fields: Dict[str, WithDefault[JsonEncoder[Any]]]) -> JsonEncoder[Any]:
         field_encoders: Dict[str, JsonEncoder[Any]] = {
             n: v.t for (n, v) in fields.items()
         }
         return JsonObjectEncoder(field_encoders=field_encoders)
+
+    def sum_extractor(self, t: type, branches: Dict[type, T]) -> T:
+        raise NotImplemented()
+
+    def optional_extractor(self, t: JsonEncoder[T]) -> JsonEncoder[Optional[T]]:
+        return JsonOptionalEncoder(t)
+
+    def list_extractor(self, t: JsonEncoder[T]) -> JsonEncoder[List[T]]:
+        return JsonListEncoder(t)
+
+    def enum_extractor(self, enum_name: str, enum_values: List[Tuple[str, Any]]) -> JsonEncoder[Any]:
+        return self.json_enum_encoder
+

@@ -405,18 +405,18 @@ class AutoJsonDecoder(Extractor[JsonDecoder[Any]]):
     json_date_decoder = JsonDateDecoder()
     json_datetime_decoder = JsonDatetimeDecoder()
 
-    basic_json_decoders: Dict[type, Boxed[T]] = {
-        bool: json_boolean_decoder,
-        str: json_string_decoder,
-        int: json_integer_decoder,
-        Decimal: json_number_decoder,
-        datetime: json_datetime_decoder,
-        date: json_date_decoder,
+    basic_json_decoders: Dict[type, Boxed[JsonDecoder[Any]]] = {
+        bool: Boxed(json_boolean_decoder),
+        str: Boxed(json_string_decoder),
+        int: Boxed(json_integer_decoder),
+        Decimal: Boxed(json_number_decoder),
+        datetime: Boxed(json_datetime_decoder),
+        date: Boxed(json_date_decoder)
     }
 
     @property
-    def basics(self) -> Dict[type, Boxed[T]]:
-        return self.basic_decoders
+    def basics(self) -> Dict[type, Boxed[JsonDecoder[Any]]]:
+        return self.basic_json_decoders
 
     def product_extractor(self, t: type, fields: Dict[str, WithDefault[JsonDecoder[Any]]]) -> JsonDecoder[Any]:
         field_decoders: Dict[str, JsonDecoder[Any]] = {
@@ -443,5 +443,5 @@ class AutoJsonDecoder(Extractor[JsonDecoder[Any]]):
     def list_extractor(self, t: JsonDecoder[T]) -> JsonDecoder[List[T]]:
         return JsonListDecoder(t)
 
-    def enum_extractor(self, enum_name: str, enum_values: List[Tuple[str, Any]]) -> T:
+    def enum_extractor(self, enum_name: str, enum_values: List[Tuple[str, Any]]) -> JsonDecoder[Any]:
         return JsonEnumDecoder(enum_name, {n: v for (n, v) in enum_values})
