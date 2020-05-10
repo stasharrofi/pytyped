@@ -252,7 +252,12 @@ class Extractor(Generic[T], metaclass=ABCMeta):
             return None
 
         extracted_branches: Dict[type, T] = {t: self._make(t) for t in maybe_union_type.branches}
-        extracted_union: T = self.sum_extractor(sum_type, extracted_branches)
+        extracted_union: T
+        if len(extracted_branches) == 1:
+            extracted_branch: List[Tuple[type, T]] = list(extracted_branches.items())
+            extracted_union = extracted_branch[0][1]
+        else:
+            extracted_union = self.sum_extractor(sum_type, extracted_branches)
         if maybe_union_type.is_optional:
             extracted_union = self.optional_extractor(extracted_union)
         return Boxed(extracted_union)
