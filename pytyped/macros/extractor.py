@@ -18,7 +18,7 @@ from typing import Type
 from typing import TypeVar
 from typing import Union
 
-from pytyped_common.boxed import Boxed
+from pytyped.macros import Boxed
 
 
 @dataclass

@@ -15,10 +15,10 @@ from typing import Optional
 from typing import TypeVar
 from typing import Union
 
-from pytyped_common.boxed import Boxed
-from pytyped_common.extractor import Extractor
-from pytyped_common.extractor import WithDefault
-from pytyped_json.common import JsValue
+from pytyped.macros import Boxed
+from pytyped.macros import Extractor
+from pytyped.macros import WithDefault
+from pytyped.json import JsValue
 
 
 class JsDecodeError(metaclass=ABCMeta):
