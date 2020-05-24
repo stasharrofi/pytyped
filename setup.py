@@ -6,6 +6,8 @@ with open("README.md", "r") as fh:
 setuptools.setup(
     name="pytyped-stasharrofi", # Replace with your own username
     version="0.0.1",
+    package_data={"pytyped": ["py.typed"]},
+    packages=["pytyped"],
     author="Shahab Tasharrofi",
     author_email="shahab.tasharrofi@gmail.com",
     description="Typing utilities for Python",
