@@ -156,7 +156,7 @@ class Extractor(Generic[T], metaclass=ABCMeta):
         if not hasattr(t, "__dataclass_fields__"):
             return None
 
-        dataclass_fields = cast(Dict[str, Field[Any]], t.__dataclass_fields__)  # type: ignore
+        dataclass_fields = cast(Dict[str, Field], t.__dataclass_fields__)  # type: ignore
         fields: Dict[str, FieldType] = {}
         for (field_name, field_definition) in dataclass_fields.items():
             field_default: Optional[Boxed[Any]] = None
