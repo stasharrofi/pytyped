@@ -13,9 +13,10 @@ from typing import Optional
 from typing import TypeVar
 from typing import Union
 
-from pytyped.macros import Boxed
-from pytyped.macros import Extractor, WithDefault
-from pytyped.json import JsValue
+from pytyped.macros.boxed import Boxed
+from pytyped.macros.extractor import Extractor
+from pytyped.macros.extractor import WithDefault
+from pytyped.json.common import JsValue
 
 T = TypeVar("T")
 
