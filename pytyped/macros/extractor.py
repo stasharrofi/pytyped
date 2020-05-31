@@ -173,7 +173,7 @@ class Extractor(Generic[T], metaclass=ABCMeta):
         """
         if not hasattr(t, "__origin__"):
             return None
-        if t.__origin__ is not list:  # type: ignore
+        if t.__origin__ not in [list, List]:  # type: ignore
             return None
         t = cast(Type[List[Any]], t)
         return Boxed(t.__args__[0])  # type: ignore
@@ -188,19 +188,17 @@ class Extractor(Generic[T], metaclass=ABCMeta):
         origin: type = cast(type, t.__origin__)  # type: ignore
         if not hasattr(origin, "__parameters__"):
             return old_context
-
-        parameters: Tuple[TypeVar, ...] = cast(Tuple[TypeVar, ...], origin.__parameters__)  # type: ignore
-        args: Tuple[Union[type, TypeVar], ...] = cast(Tuple[Union[type, TypeVar], ...], t.__args__)  # type: ignore
-        if len(args) != len(parameters):
+        if origin.__parameters__ is None:  # type: ignore
             return old_context
 
+        parameter_names: List[str] = []
+        for parameter in origin.__parameters__:  # type: ignore
+            parameter_names.append(parameter.__name__)
+
         new_context: Dict[str, type] = old_context.copy()
-        for i in range(0, len(args)):
-            arg = args[i]
-            parameter = parameters[i]
-            parameter_name: str = cast(str, parameter.__name__)  # type: ignore
+        for (parameter_name, arg) in zip(parameter_names, t.__args__):  # type: ignore
             if isinstance(arg, TypeVar):  # type: ignore
-                arg_name: str = cast(str, arg.__name__)  # type: ignore
+                arg_name: str = arg.__name__
                 if arg_name not in old_context:
                     raise ExtractorAssignmentException(old_context, arg_name)
                 new_context[parameter_name] = old_context[arg_name]
@@ -218,11 +216,10 @@ class Extractor(Generic[T], metaclass=ABCMeta):
     def assignments(self, t: type) -> FrozenSet[Tuple[str, type]]:
         if not hasattr(t, "__parameters__"):
             return frozenset([])
-        parameters: Tuple[TypeVar, ...] = cast(Tuple[TypeVar, ...], t.__parameters__)  # type: ignore
 
         assignments: Dict[str, type] = {}
-        for parameter in parameters:
-            parameter_name: str = cast(str, parameter.__name__)  # type: ignore
+        for parameter in t.__parameters__:  # type:ignore
+            parameter_name: str = cast(str, parameter.__name__)
             if parameter_name not in self._context:
                 raise ExtractorAssignmentException(self._context.copy(), parameter_name)
             assignments[parameter_name] = self._context[parameter_name]
