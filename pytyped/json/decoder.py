@@ -415,6 +415,9 @@ class AutoJsonDecoder(Extractor[JsonDecoder[Any]]):
         date: Boxed(json_date_decoder)
     }
 
+    def __init__(self) -> None:
+        super().__init__()
+
     @property
     def basics(self) -> Dict[type, Boxed[JsonDecoder[Any]]]:
         return self.basic_json_decoders
