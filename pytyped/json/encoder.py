@@ -106,6 +106,12 @@ class JsonEnumEncoder(JsonEncoder[Enum]):
         return str(t.value)
 
 
+@dataclass
+class JsonNoneEncoder(JsonEncoder[None]):
+    def encode(self, t: type(None)) -> JsValue:
+        return {}
+
+
 class AutoJsonEncoder(Extractor[JsonEncoder[Any]]):
     json_basic_encoder: JsonBasicEncoder = JsonBasicEncoder()
     json_decimal_encoder: JsonDecimalEncoder = JsonDecimalEncoder()
@@ -118,7 +124,8 @@ class AutoJsonEncoder(Extractor[JsonEncoder[Any]]):
         int: Boxed(json_basic_encoder),
         Decimal: Boxed(json_decimal_encoder),
         datetime: Boxed(json_date_encoder),
-        date: Boxed(json_date_encoder)
+        date: Boxed(json_date_encoder),
+        type(None): Boxed(JsonNoneEncoder())
     }
 
     def __init__(self) -> None:

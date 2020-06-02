@@ -412,7 +412,8 @@ class AutoJsonDecoder(Extractor[JsonDecoder[Any]]):
         int: Boxed(json_integer_decoder),
         Decimal: Boxed(json_number_decoder),
         datetime: Boxed(json_datetime_decoder),
-        date: Boxed(json_date_decoder)
+        date: Boxed(json_date_decoder),
+        type(None): Boxed(JsonNoneDecoder)
     }
 
     def __init__(self) -> None:
