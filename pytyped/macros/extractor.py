@@ -64,12 +64,16 @@ class Extractor(Generic[T], metaclass=ABCMeta):
     # Memoized values for types that have already been extracted.
     # Since types can be generic, their relative context are included.
     # So, the mapping for a generic type G[X] would be (G, {X --> A}) --> T[G[A]].
-    memoized: Dict[Tuple[type, FrozenSet[Tuple[str, type]]], Boxed[T]] = {}
+    memoized: Dict[Tuple[type, FrozenSet[Tuple[str, type]]], Boxed[T]]
 
     # Current context: A mapping from type variable names to their types.
     # Should only be non-empty when a type-extraction is in progress.
     # Not thread-safe.
-    _context: Dict[str, type] = {}
+    _context: Dict[str, type]
+
+    def __init__(self):
+        self.memoized = {}
+        self._context = {}
 
     @property
     @abstractmethod

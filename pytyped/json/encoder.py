@@ -37,7 +37,11 @@ class JsonObjectEncoder(JsonEncoder[T]):
     field_encoders: Dict[str, JsonEncoder[Any]]
 
     def encode(self, t: T) -> JsValue:
-        d = cast(NamedTuple, t)._asdict()
+        d: Dict[str, Any]
+        if hasattr(t, "_asdict"):
+            d = cast(NamedTuple, t)._asdict()
+        else:
+            d = t.__dict__
 
         return {
             field_name: field_encoder.encode(d[field_name])
