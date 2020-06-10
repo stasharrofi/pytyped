@@ -258,6 +258,47 @@ class JsonListDecoder(JsonDecoder[List[T]]):
 
 
 @dataclass
+class JsonStringDictionaryDecoder(JsonDecoder[Dict[str, T]]):
+    element_decoder: JsonDecoder[T]
+
+    def decode(
+        self, json: JsValue, ancestors: List[JsValue]
+    ) -> TOrError[Dict[str, T]]:
+        if not isinstance(json, dict):
+            return [
+                JsDecodeErrorFinal(
+                    "Expected a JSON object but received something else."
+                )
+            ]
+        decoded_elements: Dict[str, Any] = {}
+        decoding_errors: List[JsDecodeError] = []
+        for key, value_json in json.items():
+            if type(key) is not str:
+                decoding_errors.append(
+                    JsDecodeErrorFinal("Found non-string key %s in a json object (type: %s)." % (str(key), type(key)))
+                )
+            else:
+                value_json = cast(JsValue, value_json)
+                parent: JsValue = json
+                decoded_value = self.element_decoder.decode(
+                    value_json, [parent] + ancestors
+                )
+                if isinstance(decoded_value, Boxed):
+                    if key not in decoded_elements:
+                        decoded_elements[key] = decoded_value.t
+                    else:
+                        decoding_errors.append(JsDecodeErrorFinal("Found key %s more than once." % key))
+                else:
+                    for err in decoded_value:
+                        decoding_errors.append(JsDecodeErrorInField(key, err))
+
+        if len(decoding_errors) > 0:
+            return decoding_errors
+        else:
+            return Boxed(decoded_elements)
+
+
+@dataclass
 class JsonStringDecoder(JsonDecoder[str]):
     def decode(self, json: JsValue, ancestors: List[JsValue]) -> TOrError[str]:
         if not isinstance(json, str):
@@ -413,7 +454,7 @@ class AutoJsonDecoder(Extractor[JsonDecoder[Any]]):
         Decimal: Boxed(json_number_decoder),
         datetime: Boxed(json_datetime_decoder),
         date: Boxed(json_date_decoder),
-        type(None): Boxed(JsonNoneDecoder)
+        type(None): Boxed(cast(JsonDecoder[Any], JsonNoneDecoder))
     }
 
     def __init__(self) -> None:
@@ -447,6 +488,17 @@ class AutoJsonDecoder(Extractor[JsonDecoder[Any]]):
 
     def list_extractor(self, t: JsonDecoder[T]) -> JsonDecoder[List[T]]:
         return JsonListDecoder(t)
+
+    def dictionary_extractor(
+        self,
+        key: type,
+        value: type,
+        key_ext: JsonDecoder[Any],
+        val_ext: JsonDecoder[Any]
+    ) -> JsonDecoder[Dict[str, Any]]:
+        if key is str:
+            return JsonStringDictionaryDecoder(val_ext)
+        raise NotImplementedError()
 
     def enum_extractor(self, enum_name: str, enum_values: List[Tuple[str, Any]]) -> JsonDecoder[Any]:
         return JsonEnumDecoder(enum_name, {n: v for (n, v) in enum_values})

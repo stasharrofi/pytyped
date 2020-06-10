@@ -79,6 +79,14 @@ class JsonListEncoder(JsonEncoder[List[T]]):
 
 
 @dataclass
+class JsonStringDictionaryEncoder(JsonEncoder[Dict[str, T]]):
+    element_encoder: JsonEncoder[T]
+
+    def encode(self, d: Dict[str, T]) -> JsValue:
+        return {k: self.element_encoder.encode(v) for k, v in d.items()}
+
+
+@dataclass
 class JsonBasicEncoder(
     JsonEncoder[Union[str, int, bool, float, Decimal, None]]
 ):
@@ -108,7 +116,7 @@ class JsonEnumEncoder(JsonEncoder[Enum]):
 
 @dataclass
 class JsonNoneEncoder(JsonEncoder[None]):
-    def encode(self, t: type(None)) -> JsValue:
+    def encode(self, t: None) -> JsValue:
         return {}
 
 
@@ -149,6 +157,17 @@ class AutoJsonEncoder(Extractor[JsonEncoder[Any]]):
 
     def list_extractor(self, t: JsonEncoder[T]) -> JsonEncoder[List[T]]:
         return JsonListEncoder(t)
+
+    def dictionary_extractor(
+        self,
+        key: type,
+        value: type,
+        key_ext: JsonEncoder[Any],
+        val_ext: JsonEncoder[Any]
+    ) -> JsonEncoder[Dict[str, Any]]:
+        if key is str:
+            return JsonStringDictionaryEncoder(val_ext)
+        raise NotImplementedError()
 
     def enum_extractor(self, enum_name: str, enum_values: List[Tuple[str, Any]]) -> JsonEncoder[Any]:
         return self.json_enum_encoder

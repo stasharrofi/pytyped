@@ -71,7 +71,7 @@ class Extractor(Generic[T], metaclass=ABCMeta):
     # Not thread-safe.
     _context: Dict[str, type]
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.memoized = {}
         self._context = {}
 
@@ -98,6 +98,11 @@ class Extractor(Generic[T], metaclass=ABCMeta):
 
     @abstractmethod
     def list_extractor(self, t: T) -> T:
+        # Given T[X], generates T[List[X]]
+        pass
+
+    @abstractmethod
+    def dictionary_extractor(self, key: type, value: type, key_ext: T, val_ext: T) -> T:
         # Given T[X], generates T[List[X]]
         pass
 
@@ -181,6 +186,19 @@ class Extractor(Generic[T], metaclass=ABCMeta):
             return None
         t = cast(Type[List[Any]], t)
         return Boxed(t.__args__[0])  # type: ignore
+
+    @staticmethod
+    def extract_if_dictionary_type(t: type) -> Optional[Boxed[Tuple[type, type]]]:
+        """
+        :param t: type that needs to be checked for being a dictionary.
+        :return: Returns `Boxed((X, Y))` if `t` is the type `Dict[X, Y]` and returns None otherwise.
+        """
+        if not hasattr(t, "__origin__"):
+            return None
+        if t.__origin__ not in [dict, Dict]:  # type: ignore
+            return None
+        t = cast(Type[Dict[Any, Any]], t)
+        return Boxed((t.__args__[0], t.__args__[1]))  # type: ignore
 
     @staticmethod
     def apply_assignments(t: type, old_context: Dict[str, type]) -> Dict[str, type]:
@@ -269,6 +287,15 @@ class Extractor(Generic[T], metaclass=ABCMeta):
             return None
         return Boxed(self.list_extractor(self._make(maybe_list_type.t)))
 
+    def _extract_dictionary_type(self, dict_type: type) -> Optional[Boxed[T]]:
+        maybe_dict_type = Extractor.extract_if_dictionary_type(dict_type)
+        if maybe_dict_type is None:
+            return None
+        (key_type, value_type) = maybe_dict_type.t
+        key_extractor = self._make(key_type)
+        value_extractor = self._make(value_type)
+        return Boxed(self.dictionary_extractor(key_type, value_type, key_extractor, value_extractor))
+
     def _extract_enum_type(self, enum_type: type) -> Optional[Boxed[T]]:
         try:
             if not issubclass(enum_type, Enum):
@@ -295,6 +322,7 @@ class Extractor(Generic[T], metaclass=ABCMeta):
         result = Extractor.or_else(result, lambda: self._extract_basic_type(t))
         result = Extractor.or_else(result, lambda: self._extract_union_type(t))
         result = Extractor.or_else(result, lambda: self._extract_list_type(t))
+        result = Extractor.or_else(result, lambda: self._extract_dictionary_type(t))
         result = Extractor.or_else(result, lambda: self._extract_product_type(t))
         result = Extractor.or_else(result, lambda: self._extract_enum_type(t))
 
