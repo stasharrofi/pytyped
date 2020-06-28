@@ -8,6 +8,7 @@ verify_ssl = true
 [packages]
 mypy = "*"
 python-dateutil = "*"
+dataclasses = "*"
 
 [requires]
 python_version = "3.6"

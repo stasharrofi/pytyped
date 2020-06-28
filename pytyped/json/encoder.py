@@ -18,6 +18,12 @@ from pytyped.macros.extractor import Extractor
 from pytyped.macros.extractor import WithDefault
 from pytyped.json.common import JsValue
 
+
+@dataclass
+class JsonEncoderException(Exception):
+    message: str
+
+
 T = TypeVar("T")
 
 
@@ -47,6 +53,48 @@ class JsonObjectEncoder(JsonEncoder[T]):
             field_name: field_encoder.encode(d[field_name])
             for field_name, field_encoder in self.field_encoders.items()
         }
+
+
+@dataclass
+class JsonTupleEncoder(JsonEncoder[Tuple[Any, ...]]):
+    field_encoders: List[JsonEncoder[Any]]
+
+    def encode(self, t: Tuple[Any, ...]) -> JsValue:
+        return [e.encode(v) for (v, e) in zip(t, self.field_encoders)]
+
+
+@dataclass
+class JsonTaggedEncoder(JsonEncoder[T]):
+    branches: Dict[str, Tuple[type, JsonEncoder[Any]]]
+    tag_field_name: str = "tag"
+    value_field_name: Optional[str] = None
+
+    def encode(self, t: T) -> JsValue:
+        for branch_name, (branch_type, encoder) in self.branches.items():
+            if isinstance(t, branch_type):
+                encoded_value: JsValue = encoder.encode(t)
+                if self.value_field_name is not None:
+                    encoded_value = {self.value_field_name: encoded_value}
+                if not isinstance(encoded_value, dict):
+                    raise JsonEncoderException("Only JSON objects are supported as encoded value of named sum types.")
+                encoded_value[self.tag_field_name] = branch_name
+                return encoded_value
+
+        raise JsonEncoderException("Unknown subclass (known subclasses are %s)" % (", ".join(self.branches.keys())))
+
+
+@dataclass
+class JsonPriorityEncoder(JsonEncoder[T]):
+    branches: List[Tuple[type, JsonEncoder[Any]]]
+
+    def encode(self, t: T) -> JsValue:
+        for branch_type, encoder in self.branches:
+            if isinstance(t, branch_type):
+                return encoder.encode(t)
+
+        raise JsonEncoderException(
+            "Unknown sub-type (known sub-types are %s)" % (", ".join([str(t) for (t, _) in self.branches]))
+        )
 
 
 @dataclass
@@ -143,14 +191,24 @@ class AutoJsonEncoder(Extractor[JsonEncoder[Any]]):
     def basics(self) -> Dict[type, Boxed[JsonEncoder[Any]]]:
         return self.basic_encoders
 
-    def product_extractor(self, t: type, fields: Dict[str, WithDefault[JsonEncoder[Any]]]) -> JsonEncoder[Any]:
+    def named_product_extractor(self, t: type, fields: Dict[str, WithDefault[JsonEncoder[Any]]]) -> JsonEncoder[Any]:
         field_encoders: Dict[str, JsonEncoder[Any]] = {
             n: v.t for (n, v) in fields.items()
         }
         return JsonObjectEncoder(field_encoders=field_encoders)
 
-    def sum_extractor(self, t: type, branches: Dict[type, T]) -> T:
-        raise NotImplemented()
+    def unnamed_product_extractor(self, t: type, fields: List[JsonEncoder[Any]]) -> JsonEncoder[Tuple[Any, ...]]:
+        return JsonTupleEncoder(fields)
+
+    def named_sum_extractor(self, t: type, branches: Dict[str, Tuple[type, JsonEncoder[Any]]]) -> JsonEncoder[Any]:
+        return JsonTaggedEncoder(
+            branches=branches,
+            tag_field_name=t.__name__,
+            value_field_name=None
+        )
+
+    def unnamed_sum_extractor(self, t: type, branches: List[Tuple[type, JsonEncoder[Any]]]) -> JsonEncoder[Any]:
+        return JsonPriorityEncoder(branches)
 
     def optional_extractor(self, t: JsonEncoder[T]) -> JsonEncoder[Optional[T]]:
         return JsonOptionalEncoder(t)
