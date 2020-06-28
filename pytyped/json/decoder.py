@@ -2,6 +2,8 @@ from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
 from datetime import date
 from datetime import datetime
+from decimal import DecimalException
+
 from dateutil import parser
 from decimal import Decimal
 from typing import Tuple
@@ -188,11 +190,7 @@ class JsonTaggedDecoder(JsonDecoder[Any]):
 
     def decode(self, json: JsValue, ancestors: List[JsValue]) -> TOrError[T]:
         if not isinstance(json, dict):
-            return [
-                JsDecodeErrorFinal(
-                    "Expected a JSON object but received something else."
-                )
-            ]
+            return [JsDecodeErrorFinal("Expected a JSON object but received something else.")]
 
         tag_value = json.get(self.tag_field_name)
         if tag_value is None:
@@ -411,7 +409,10 @@ class JsonNumberDecoder(JsonDecoder[Decimal]):
             or isinstance(json, int)
             or isinstance(json, str)
         ):
-            return Boxed(Decimal(json))
+            try:
+                return Boxed(Decimal(json))
+            except DecimalException:
+                return [JsDecodeErrorFinal("Value not convertible to decimal: '%s'." % str(json))]
 
         return [
             JsDecodeErrorFinal(

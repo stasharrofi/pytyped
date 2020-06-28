@@ -1,4 +1,9 @@
 import json
+from typing import Dict
+from typing import Tuple
+from typing import Union
+from typing import cast
+
 import pytest  # type: ignore
 
 from dataclasses import dataclass
@@ -14,8 +19,11 @@ from pytyped.json.decoder import JsDecodeErrorInArray
 from pytyped.json.decoder import JsDecodeErrorInField
 from pytyped.json.decoder import JsonBoxedDecoder
 from pytyped.json.decoder import JsDecodeErrorFinal
+from pytyped.json.decoder import JsonDecoder
 from pytyped.json.decoder import JsonErrorAsDefaultDecoder
 from pytyped.json.decoder import AutoJsonDecoder
+from pytyped.json.decoder import JsonMappedDecoder
+from pytyped.json.decoder import JsonTaggedDecoder
 
 
 class E(Enum):
@@ -31,6 +39,7 @@ class A:
     e: Optional[E]
     x: int
     y: bool
+    t: Tuple[str, int] = ("t_str", 10)
     z: str = "abc"
 
 
@@ -51,18 +60,38 @@ class BoxedA(NamedTuple):
     value: A
 
 
+@dataclass
+class C:
+    common: int
+
+
+@dataclass
+class C1(C):
+    c1_specific: str
+
+
+@dataclass
+class C2(C):
+    c2_specific: str
+
+
+@dataclass
+class D:
+    common: int
+    c1_specific: Optional[str]
+    c2_specific: Optional[str]
+
+
 auto_json_decoder = AutoJsonDecoder()
 a_decoder = auto_json_decoder.extract(A)
 b_decoder = auto_json_decoder.extract(B)
 boxed_a_decoder = JsonBoxedDecoder("value", a_decoder, lambda d: BoxedA(**d))
-default_a = A(d=None, dt=None, e=None, x=100, y=False, z="default")
+default_a = A(d=None, dt=None, e=None, x=100, y=False, t=("t_str2", 20), z="default")
 a_with_default_decoder = JsonErrorAsDefaultDecoder(a_decoder, default_a)
 
 valid_a_jsons = [
     '{"x": 1, "y": false, "z": "xyz"}',
-    '{"x": 1, "y": false, "z": "xyz", "ts":"2019-01-02"}',
-    '{"x": 1, "y": false, "z": "xyz", "ts": 1546405200.001}',
-    '{"x": 1, "y": false, "z": "xyz", "ts": 1546405200001}',
+    '{"x": 1, "y": false, "t": ["abc", 8]}',
     '{"x": 1, "y": false}',
     '{"x": "1", "y": false}',
     '{"x": 1, "y": false, "z": null}',
@@ -71,10 +100,17 @@ valid_a_jsons = [
     '{"dt": "2019-01-20T11:11:11", "x": 1, "y": false}',
 ]
 invalid_a_jsons = [
+    '{"x": [], "y": false}',  # expected integer, received JsArray
     '{"x": 1.5, "y": false}',  # non-integral integer
     '{"x": 1, "y": "string"}',  # Boolean expected but string found
     '{"x": 1, "z": "abc"}',  # Required field missing
     '{"x": 1, "y": false, "z": 1}',  # Expected string but received numeric
+    '{"x": 1, "y": false, "t": "abc"}',  # A tuple is supposed to be encoded as a JsArray.
+    '{"x": 1, "y": false, "t": {}}',  # A tuple is supposed to be encoded as a JsArray.
+    '{"x": 1, "y": false, "t": ["abc"]}',  # Wrong number of arguments for tuple
+    '{"x": 1, "y": false, "t": ["abc", 10, "efg"]}',  # Wrong number of arguments for tuple
+    '{"x": 1, "y": false, "t": [1, 10]}',  # Wrong type of argument in tuple
+    '{"x": 1, "y": false, "t": ["abc", "def"]}',  # Wrong type of argument in tuple
     '{"e": 1, "x": 1, "y": false}',  # Expected enum E but received numeric
     '{"e": "X", "x": 1, "y": false}',  # Expected enum E but received string that cannot be decoded into date
     '{"d": 1, "x": 1, "y": false}',  # Expected date but received numeric
@@ -126,7 +162,9 @@ def test_json_decoder_valid() -> None:
             assert isinstance(decoded_a, A)
             assert decoded_a.x == 1
             assert not decoded_a.y
-            assert (decoded_a.z == "abc") or (decoded_a.z == "xyz")
+            assert decoded_a.t[0] in ["t_str", "abc"]
+            assert decoded_a.t[1] in [8, 10]
+            assert decoded_a.z in ["abc", "xyz"]
         except Exception as e:
             assert False, (
                 "Caught an exception while decoding valid JSONs. Exception: %s"
@@ -250,3 +288,188 @@ def test_error_as_default_decoder() -> None:
     for invalid_a_json in invalid_a_jsons:
         a = a_with_default_decoder.read(json.loads(invalid_a_json))
         assert a == default_a
+
+
+def test_optional_decoder_none() -> None:
+    assert auto_json_decoder.extract(Optional[A]).read(json.loads("null")) is None
+
+
+def valid_c_test_cases(decoder: JsonDecoder[C], valid_jsons: List[str]) -> None:
+    for s in valid_jsons:
+        try:
+            c: C = decoder.read(json.loads(s))
+            assert c.common == 10
+            if isinstance(c, C1):
+                assert c.c1_specific == "abc"
+            else:
+                assert isinstance(c, C2)
+                assert c.c2_specific == "def"
+        except JsDecodeException:
+            assert False, "Valid JSON failed to be decoded: '%s'." % s
+
+
+def invalid_c_test_cases(decoder: JsonDecoder[C], invalid_jsons: List[str]) -> None:
+    for s in invalid_jsons:
+        try:
+            decoder.read(json.loads(s))
+            assert False, "Invalid JSON was decoded successfully: '%s'." % s
+        except JsDecodeException:
+            pass
+
+
+def valid_d_test_cases(decoder: JsonDecoder[D], valid_jsons: List[str]) -> None:
+    for s in valid_jsons:
+        try:
+            d: D = decoder.read(json.loads(s))
+            assert d.common == 10
+            assert d.c1_specific in [None, "abc"]
+            assert d.c2_specific in [None, "def"]
+            assert None in [d.c1_specific, d.c2_specific]
+        except JsDecodeException:
+            assert False, "Valid JSON failed to be decoded: '%s'." % s
+
+
+def invalid_d_test_cases(decoder: JsonDecoder[D], invalid_jsons: List[str]) -> None:
+    for s in invalid_jsons:
+        try:
+            decoder.read(json.loads(s))
+            assert False, "Invalid JSON was decoded successfully: '%s'." % s
+        except JsDecodeException:
+            pass
+
+
+c_valid_flat_json_strs: List[str] = [
+    '{"common": 10, "c1_specific": "abc", "C": "C1"}',
+    '{"common": 10, "c2_specific": "def", "C": "C2"}'
+]
+c_invalid_flat_json_strs: List[str] = [
+    '[]',  # named unions are expected to be JsObjects
+    '10',  # named unions are expected to be JsObjects
+    'null',  # named unions are expected to be JsObjects
+    '"C1"',  # named unions are expected to be JsObjects
+    '[{"common": 10, "c1_specific": "abc", "C": "C1"}]',  # named unions are expected to be JsObjects
+    '{"common": 10, "c1_specific": "abc", "C": 10}',  # tag is supposed to be a string
+    '{"common": 10, "c1_specific": "abc"}',  # tag is missing
+    '{"common": 10, "c1_specific": "def", "C": "C3"}',  # unknown tag
+    '{"common": 10, "c2_specific": "def", "C": "C3"}',  # unknown tag
+    '{"common": "abc", "c1_specific": "def", "C": "C1"}',  # expected integer but received string
+    '{"common": 10, "c1_specific": 10, "C": "C1"}',  # expected string but received integer
+    '{"common": "abc", "c2_specific": "def", "C": "C2"}',  # expected integer but received string
+    '{"common": 10, "c2_specific": 10, "C": "C2"}',  # expected string but received integer
+    '{"common": "abc", "c2_specific": "def", "C": "C1"}',  # incorrect tag
+    '{"common": "abc", "c1_specific": "def", "C": "C2"}',  # incorrect tag
+]
+
+c_valid_nested_json_strs: List[str] = [
+    '{"value": {"common": 10, "c1_specific": "abc"}, "tag": "C1"}',
+    '{"value": {"common": 10, "c2_specific": "def"}, "tag": "C2"}'
+]
+c_invalid_nested_json_strs: List[str] = [
+    '[]',  # named unions are expected to be JsObjects
+    '10',  # named unions are expected to be JsObjects
+    'null',  # named unions are expected to be JsObjects
+    '"C1"',  # named unions are expected to be JsObjects
+    '[{"common": 10, "c1_specific": "abc", "tag": "C1"}]',  # named unions are expected to be JsObjects
+    '{"common": 10, "c1_specific": "abc", "tag": 10}',  # tag is supposed to be a string
+    '{"common": 10, "c1_specific": "abc", "tag": "C1"}',  # flat encoding instead of nested encoding
+    '{"value": {"common": 10, "c1_specific": "abc"}}',  # tag is missing
+    '{"value": {"common": 10, "c1_specific": "def"}, "tag": "C3"}',  # unknown tag
+    '{"value": {"common": 10, "c2_specific": "def"}, "tag": "C3"}',  # unknown tag
+    '{"value": {"common": "abc", "c1_specific": "def"}, "tag": "C1"}',  # expected integer but received string
+    '{"value": {"common": 10, "c1_specific": 10}, "tag": "C1"}',  # expected string but received integer
+    '{"value": {"common": "abc", "c2_specific": "def"}, "tag": "C2"}',  # expected integer but received string
+    '{"value": {"common": 10, "c2_specific": 10}, "tag": "C2"}',  # expected string but received integer
+    '{"value": {"common": "abc", "c2_specific": "def"}, "tag": "C1"}',  # incorrect tag
+    '{"value": {"common": "abc", "c1_specific": "def"}, "tag": "C2"}',  # incorrect tag
+]
+
+c_valid_untagged_json_strs: List[str] = [
+    '{"common": 10, "c1_specific": "abc"}',
+    '{"common": 10, "c2_specific": "def"}'
+]
+c_invalid_untagged_json_strs: List[str] = [
+    '[]',  # not decodable as either C1 or C2
+    '10',  # not decodable as either C1 or C2
+    'null',  # not decodable as either C1 or C2
+    '"C1"',  # not decodable as either C1 or C2
+    '[{"common": 10, "c1_specific": "abc"}]',  # not decodable as either C1 or C2
+    '{"common": "abc", "c1_specific": "def"}',  # expected integer but received string
+    '{"common": 10, "c1_specific": 10}',  # expected string but received integer
+    '{"common": "abc", "c2_specific": "def"}',  # expected integer but received string
+    '{"common": 10, "c2_specific": 10}'  # expected string but received integer
+]
+
+c_flat_decoder = auto_json_decoder.extract(C)
+c_nested_decoder = cast(
+    JsonDecoder[C],
+    JsonTaggedDecoder(
+        branch_decoders={
+            "C1": auto_json_decoder.extract(C1),
+            "C2": auto_json_decoder.extract(C2)
+        },
+        tag_field_name="tag",
+        value_field_name="value"
+    )
+)
+c_untagged_decoder = cast(JsonDecoder[C], auto_json_decoder.extract(Union[C1, C2]))
+
+c_decoding_tests: List[Tuple[JsonDecoder[C], List[str], List[str]]] = [
+    (c_flat_decoder, c_valid_flat_json_strs, c_invalid_flat_json_strs),
+    (c_nested_decoder, c_valid_nested_json_strs, c_invalid_nested_json_strs),
+    (c_untagged_decoder, c_valid_untagged_json_strs, c_invalid_untagged_json_strs)
+]
+
+
+def test_c_decoders() -> None:
+    for decoder, valid_jsons, invalid_jsons in c_decoding_tests:
+        valid_c_test_cases(decoder, valid_jsons)
+        invalid_c_test_cases(decoder, invalid_jsons)
+
+
+def c_to_d(c: C) -> D:
+    return D(
+        common=c.common,
+        c1_specific=c.c1_specific if isinstance(c, C1) else None,
+        c2_specific=c.c2_specific if isinstance(c, C2) else None
+    )
+
+
+d_decoding_tests: List[Tuple[JsonDecoder[D], List[str], List[str]]] = [
+    (JsonMappedDecoder(decoder, c_to_d), valids, invalids) for (decoder, valids, invalids) in c_decoding_tests
+]
+
+
+def test_d_decoding() -> None:
+    for decoder, valid_jsons, invalid_jsons in d_decoding_tests:
+        valid_d_test_cases(decoder, valid_jsons)
+        invalid_d_test_cases(decoder, invalid_jsons)
+
+
+def test_string_dictionary_decoder() -> None:
+    decoder = auto_json_decoder.extract(Dict[str, int])
+    valid_json_strs: List[str] = [
+        '{}',
+        '{"a": 1, "b": 2}',
+        '{"c": 1, "b": 2}',
+    ]
+    invalid_json_strs: List[str] = [
+        '[]',
+        'null',
+        '10',
+        '"abc"',
+        '[{}]',
+        '{"a": "abc", "b": 2}'
+    ]
+
+    for json_str in valid_json_strs:
+        try:
+            decoder.read(json.loads(json_str))
+        except JsDecodeException:
+            assert False, "Valid JSON failed to be deserialized: '%s'." % json_str
+
+    for json_str in invalid_json_strs:
+        try:
+            decoder.read(json.loads(json_str))
+            assert False, "Invalid JSON was successfully deserialized: '%s'." % json_str
+        except JsDecodeException:
+            pass
