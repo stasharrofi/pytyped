@@ -4,9 +4,11 @@ url = "https://pypi.org/simple"
 verify_ssl = true
 
 [dev-packages]
+mypy = "*"
+pytest = "*"
+pytest-cov = "*"
 
 [packages]
-mypy = "*"
 python-dateutil = "*"
 dataclasses = "*"
 

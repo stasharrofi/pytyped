@@ -91,7 +91,7 @@ class JsonDecoder(Generic[T], metaclass=ABCMeta):
 @dataclass
 class JsonObjectDecoder(JsonDecoder[T]):
     field_decoders: Dict[str, JsonDecoder[Any]]
-    field_defaults: Dict[str, Any]
+    field_defaults: Dict[str, Union[Boxed[Any], Callable[[], Any]]]
     constructor: Callable[[Dict[str, Any]], T]
 
     def get_constructor(self) -> Callable[[Dict[str, Any]], T]:
@@ -111,9 +111,8 @@ class JsonObjectDecoder(JsonDecoder[T]):
                 if isinstance(field_decoder, JsonOptionalDecoder):
                     decoded_fields[field_name] = None
                 elif field_name in self.field_defaults:
-                    decoded_fields[field_name] = self.field_defaults[
-                        field_name
-                    ]
+                    def_or_fac = self.field_defaults[field_name]
+                    decoded_fields[field_name] = def_or_fac.t if isinstance(def_or_fac, Boxed) else def_or_fac()
                 else:
                     decoding_errors.append(
                         JsDecodeErrorInField(
@@ -558,10 +557,8 @@ class AutoJsonDecoder(Extractor[JsonDecoder[Any]]):
         field_decoders: Dict[str, JsonDecoder[Any]] = {
             n: v.t for (n, v) in fields.items()
         }
-        field_defaults: Dict[str, Any] = {
-            n: v.default.t
-            for (n, v) in fields.items()
-            if v.default is not None
+        field_defaults: Dict[str, Union[Boxed[Any], Callable[[], Any]]] = {
+            n: v.default for (n, v) in fields.items() if v.default is not None
         }
 
         return JsonObjectDecoder(

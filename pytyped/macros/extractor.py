@@ -45,7 +45,7 @@ U = TypeVar("U")
 @dataclass
 class WithDefault(Generic[T]):
     t: T
-    default: Optional[Boxed[Any]]
+    default: Union[None, Boxed[Any], Callable[[], Any]]
 
     def map(self, f: Callable[[T], U]) -> "WithDefault[U]":
         return WithDefault(f(self.t), self.default)
@@ -222,9 +222,11 @@ class Extractor(Generic[T], metaclass=ABCMeta):
         dataclass_fields = cast(Dict[str, Field], t.__dataclass_fields__)  # type: ignore
         fields: Dict[str, FieldType] = {}
         for (field_name, field_definition) in dataclass_fields.items():
-            field_default: Optional[Boxed[Any]] = None
+            field_default: Union[None, Boxed[Any], Callable[[], Any]] = None
             if field_definition.default is not MISSING:
                 field_default = Boxed(field_definition.default)
+            elif field_definition.default_factory is not MISSING:  # type: ignore
+                field_default = field_definition.default_factory  # type: ignore
             fields[field_name] = FieldType(field_definition.type, field_default)
         return fields
 
