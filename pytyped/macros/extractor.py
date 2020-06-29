@@ -45,7 +45,7 @@ U = TypeVar("U")
 @dataclass
 class WithDefault(Generic[T]):
     t: T
-    default: Optional[Boxed[Any]]
+    default: Union[None, Boxed[Any], Callable[[], Any]]
 
     def map(self, f: Callable[[T], U]) -> "WithDefault[U]":
         return WithDefault(f(self.t), self.default)
@@ -55,9 +55,14 @@ FieldType = WithDefault[type]
 
 
 @dataclass
-class UnionDescriptor:
+class UnnamedUnionDescriptor:
     branches: List[type]  # List of non-None branches
     is_optional: bool  # True if `None` is one of the union branches
+
+
+@dataclass
+class NamedUnionDescriptor:
+    branches: Dict[str, type]  # Mapping of names to branches
 
 
 class Extractor(Generic[T], metaclass=ABCMeta):
@@ -82,12 +87,22 @@ class Extractor(Generic[T], metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    def product_extractor(self, t: type, fields: Dict[str, WithDefault[T]]) -> T:
+    def named_product_extractor(self, t: type, fields: Dict[str, WithDefault[T]]) -> T:
         # Given N = {f1: X1, f2: X2, ..., fn: Xn}, T[X1], T[X2], ..., and T[Xn], generates T[N]
         pass
 
     @abstractmethod
-    def sum_extractor(self, t: type, branches: Dict[type, T]) -> T:
+    def unnamed_product_extractor(self, t: type, fields: List[T]) -> T:
+        # Given N = {f1: X1, f2: X2, ..., fn: Xn}, T[X1], T[X2], ..., and T[Xn], generates T[N]
+        pass
+
+    @abstractmethod
+    def named_sum_extractor(self, t: type, branches: Dict[str, Tuple[type, T]]) -> T:
+        # Given T[X], generates T[Optional[X]]
+        pass
+
+    @abstractmethod
+    def unnamed_sum_extractor(self, t: type, branches: List[Tuple[type, T]]) -> T:
         # Given T[X], generates T[Optional[X]]
         pass
 
@@ -112,7 +127,7 @@ class Extractor(Generic[T], metaclass=ABCMeta):
         pass
 
     @staticmethod
-    def extract_if_union_type(t: type) -> Optional[UnionDescriptor]:
+    def extract_if_union_type(t: type) -> Optional[UnnamedUnionDescriptor]:
         """
         :param t: Type that needs to be checked for being optional.
         :return: Returns Boxed(x) if t is Optional[x] and returns None otherwise.
@@ -132,7 +147,46 @@ class Extractor(Generic[T], metaclass=ABCMeta):
             else:
                 branches.append(inner_type)
 
-        return UnionDescriptor(branches, is_optional)
+        return UnnamedUnionDescriptor(branches, is_optional)
+
+    @staticmethod
+    def extract_if_has_sub_classes(t: type) -> Optional[NamedUnionDescriptor]:
+        """
+        :param t: Type that needs to be checked for being optional.
+        :return: Returns Boxed(x) if t is Optional[x] and returns None otherwise.
+        """
+        if not hasattr(t, "__subclasses__"):
+            return None
+        branch_list = t.__subclasses__()
+        if len(branch_list) <= 0:
+            return None
+
+        branches: Dict[str, type] = {}
+        for branch in branch_list:
+            if not hasattr(branch, "__name__"):
+                return None
+            branches[branch.__name__] = branch
+
+        return NamedUnionDescriptor(branches)
+
+    @staticmethod
+    def extract_if_tuple_type(t: type) -> Optional[List[type]]:
+        """
+        :param t: Type that needs to be checked for being a named tuple.
+        :return:
+           If `t` is a Tuple, returns a list of `t`'s field types.
+           Otherwise, returns None.
+        """
+        if not hasattr(t, "__origin__"):
+            return None
+        if t.__origin__ not in [Tuple, tuple]:  # type: ignore
+            return None
+        if not hasattr(t, "__args__"):
+            return None
+
+        args: Tuple[type, ...] = cast(Tuple[type, ...], t.__args__)  # type: ignore
+        inner_types: List[type] = [t for t in args]
+        return inner_types
 
     @staticmethod
     def extract_if_named_tuple_type(t: type) -> Optional[Dict[str, FieldType]]:
@@ -168,9 +222,11 @@ class Extractor(Generic[T], metaclass=ABCMeta):
         dataclass_fields = cast(Dict[str, Field], t.__dataclass_fields__)  # type: ignore
         fields: Dict[str, FieldType] = {}
         for (field_name, field_definition) in dataclass_fields.items():
-            field_default: Optional[Boxed[Any]] = None
+            field_default: Union[None, Boxed[Any], Callable[[], Any]] = None
             if field_definition.default is not MISSING:
                 field_default = Boxed(field_definition.default)
+            elif field_definition.default_factory is not MISSING:  # type: ignore
+                field_default = field_definition.default_factory  # type: ignore
             fields[field_name] = FieldType(field_definition.type, field_default)
         return fields
 
@@ -254,7 +310,15 @@ class Extractor(Generic[T], metaclass=ABCMeta):
     def _extract_basic_type(self, t: type) -> Optional[Boxed[T]]:
         return self.basics.get(t)
 
-    def _extract_product_type(self, product_type: type) -> Optional[Boxed[T]]:
+    def _extract_unnamed_product_type(self, product_type: type) -> Optional[Boxed[T]]:
+        maybe_fields = Extractor.extract_if_tuple_type(product_type)
+        if maybe_fields is None:
+            return None
+
+        fields: List[T] = [self._make(t) for t in maybe_fields]
+        return Boxed(self.unnamed_product_extractor(product_type, fields))
+
+    def _extract_named_product_type(self, product_type: type) -> Optional[Boxed[T]]:
         maybe_fields = Extractor.extract_if_named_tuple_type(product_type)
         maybe_fields = Extractor.or_else(maybe_fields, lambda: Extractor.extract_if_dataclass_type(product_type))
         if maybe_fields is None:
@@ -263,23 +327,32 @@ class Extractor(Generic[T], metaclass=ABCMeta):
         fields: Dict[str, WithDefault[T]] = {
             n: v.map(self._make) for (n, v) in maybe_fields.items()
         }
-        return Boxed(self.product_extractor(product_type, fields))
+        return Boxed(self.named_product_extractor(product_type, fields))
 
-    def _extract_union_type(self, sum_type: type) -> Optional[Boxed[T]]:
-        maybe_union_type = Extractor.extract_if_union_type(sum_type)
-        if maybe_union_type is None:
+    def _extract_unnamed_sum_type(self, sum_type: type) -> Optional[Boxed[T]]:
+        maybe_unnamed_sum_type = Extractor.extract_if_union_type(sum_type)
+        if maybe_unnamed_sum_type is None:
             return None
 
-        extracted_branches: Dict[type, T] = {t: self._make(t) for t in maybe_union_type.branches}
+        extracted_branches: List[Tuple[type, T]] = [(t, self._make(t)) for t in maybe_unnamed_sum_type.branches]
         extracted_union: T
         if len(extracted_branches) == 1:
-            extracted_branch: List[Tuple[type, T]] = list(extracted_branches.items())
-            extracted_union = extracted_branch[0][1]
+            extracted_union = extracted_branches[0][1]
         else:
-            extracted_union = self.sum_extractor(sum_type, extracted_branches)
-        if maybe_union_type.is_optional:
+            extracted_union = self.unnamed_sum_extractor(sum_type, extracted_branches)
+        if maybe_unnamed_sum_type.is_optional:
             extracted_union = self.optional_extractor(extracted_union)
         return Boxed(extracted_union)
+
+    def _extract_named_sum_type(self, sum_type: type) -> Optional[Boxed[T]]:
+        maybe_named_sum_type = Extractor.extract_if_has_sub_classes(sum_type)
+        if maybe_named_sum_type is None:
+            return None
+
+        extracted_branches: Dict[str, Tuple[type, T]] = {
+            s: (t, self._make(t)) for (s, t) in maybe_named_sum_type.branches.items()
+        }
+        return Boxed(self.named_sum_extractor(sum_type, extracted_branches))
 
     def _extract_list_type(self, list_type: type) -> Optional[Boxed[T]]:
         maybe_list_type = Extractor.extract_if_list_type(list_type)
@@ -320,10 +393,12 @@ class Extractor(Generic[T], metaclass=ABCMeta):
         self._context = Extractor.apply_assignments(t, self._context)
 
         result = Extractor.or_else(result, lambda: self._extract_basic_type(t))
-        result = Extractor.or_else(result, lambda: self._extract_union_type(t))
+        result = Extractor.or_else(result, lambda: self._extract_unnamed_sum_type(t))
+        result = Extractor.or_else(result, lambda: self._extract_named_sum_type(t))
         result = Extractor.or_else(result, lambda: self._extract_list_type(t))
         result = Extractor.or_else(result, lambda: self._extract_dictionary_type(t))
-        result = Extractor.or_else(result, lambda: self._extract_product_type(t))
+        result = Extractor.or_else(result, lambda: self._extract_unnamed_product_type(t))
+        result = Extractor.or_else(result, lambda: self._extract_named_product_type(t))
         result = Extractor.or_else(result, lambda: self._extract_enum_type(t))
 
         if result is None:

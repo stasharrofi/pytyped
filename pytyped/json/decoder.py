@@ -2,6 +2,8 @@ from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
 from datetime import date
 from datetime import datetime
+from decimal import DecimalException
+
 from dateutil import parser
 from decimal import Decimal
 from typing import Tuple
@@ -91,7 +93,7 @@ class JsonDecoder(Generic[T], metaclass=ABCMeta):
 @dataclass
 class JsonObjectDecoder(JsonDecoder[T]):
     field_decoders: Dict[str, JsonDecoder[Any]]
-    field_defaults: Dict[str, Any]
+    field_defaults: Dict[str, Union[Boxed[Any], Callable[[], Any]]]
     constructor: Callable[[Dict[str, Any]], T]
 
     def get_constructor(self) -> Callable[[Dict[str, Any]], T]:
@@ -111,9 +113,8 @@ class JsonObjectDecoder(JsonDecoder[T]):
                 if isinstance(field_decoder, JsonOptionalDecoder):
                     decoded_fields[field_name] = None
                 elif field_name in self.field_defaults:
-                    decoded_fields[field_name] = self.field_defaults[
-                        field_name
-                    ]
+                    def_or_fac = self.field_defaults[field_name]
+                    decoded_fields[field_name] = def_or_fac.t if isinstance(def_or_fac, Boxed) else def_or_fac()
                 else:
                     decoding_errors.append(
                         JsDecodeErrorInField(
@@ -141,6 +142,92 @@ class JsonObjectDecoder(JsonDecoder[T]):
             return decoding_errors
         else:
             return Boxed(self.get_constructor()(decoded_fields))
+
+
+@dataclass
+class JsonTupleDecoder(JsonDecoder[Tuple[Any, ...]]):
+    field_decoders: List[JsonDecoder[Any]]
+
+    def decode(self, json: JsValue, ancestors: List[JsValue]) -> TOrError[Tuple[Any, ...]]:
+        if not isinstance(json, list):
+            return [
+                JsDecodeErrorFinal(
+                    "Expected a JSON array but received something else."
+                )
+            ]
+        if len(json) != len(self.field_decoders):
+            return [
+                JsDecodeErrorFinal(
+                    "Expected a JSON array of size %d but received one of size %d." % (len(self.field_decoders), len(json))
+                )
+            ]
+
+        decoded_fields: List[Any] = []
+        decoding_errors: List[JsDecodeError] = []
+        for index, field_decoder in enumerate(self.field_decoders):
+            # The field_name is a key and its associated value is not None. So, it should be decoded.
+            field_json = cast(JsValue, json[index])
+            decoded_field = field_decoder.decode(field_json, [cast(JsValue, json)] + ancestors)
+            if isinstance(decoded_field, Boxed):
+                decoded_fields.append(decoded_field.t)
+            else:
+                for err in decoded_field:
+                    decoding_errors.append(
+                        JsDecodeErrorInArray(index, err)
+                    )
+
+        if len(decoding_errors) > 0:
+            return decoding_errors
+        else:
+            return Boxed(tuple(decoded_fields))
+
+
+@dataclass
+class JsonTaggedDecoder(JsonDecoder[Any]):
+    branch_decoders: Dict[str, JsonDecoder[Any]]
+    tag_field_name: str = "tag"
+    value_field_name: Optional[str] = None  # None means the value is in the same object file
+
+    def decode(self, json: JsValue, ancestors: List[JsValue]) -> TOrError[T]:
+        if not isinstance(json, dict):
+            return [JsDecodeErrorFinal("Expected a JSON object but received something else.")]
+
+        tag_value = json.get(self.tag_field_name)
+        if tag_value is None:
+            return [
+                JsDecodeErrorInField(
+                    field_name=self.tag_field_name,
+                    error=JsDecodeErrorFinal(
+                        "Required tag field not found."
+                    )
+                )
+            ]
+        if not isinstance(tag_value, str):
+            return [
+                JsDecodeErrorInField(
+                    field_name=self.tag_field_name,
+                    error=JsDecodeErrorFinal(
+                        "Expected a Json string for tag field but received something else."
+                    )
+                )
+            ]
+
+        decoder = self.branch_decoders.get(tag_value)
+        if decoder is None:
+            return [
+                JsDecodeErrorInField(
+                    field_name=self.tag_field_name,
+                    error=JsDecodeErrorFinal(
+                        "Unknown tag value %s (possible values are: %s)." % (tag_value, ", ".join(self.branch_decoders.keys()))
+                    )
+                )
+            ]
+
+        if self.value_field_name is None:
+            return decoder.decode(json, ancestors)
+
+        value_field = cast(JsValue, json.get(self.value_field_name))
+        return decoder.decode(value_field, [value_field] + ancestors)
 
 
 @dataclass
@@ -173,11 +260,11 @@ class JsonErrorAsDefaultDecoder(JsonDecoder[T]):
 
 
 @dataclass
-class JsonPriorityDecoder(JsonDecoder[T]):
+class JsonPriorityDecoder(JsonDecoder[Any]):
     # Decoders in the order of priority. The head of the list has more priority.
-    inner_decoders: List[JsonDecoder[T]]
+    inner_decoders: List[JsonDecoder[Any]]
 
-    def decode(self, json: JsValue, ancestors: List[JsValue]) -> TOrError[T]:
+    def decode(self, json: JsValue, ancestors: List[JsValue]) -> TOrError[Any]:
         errors: List[JsDecodeError] = []
         for inner_decoder in self.inner_decoders:
             result = inner_decoder.decode(json, ancestors)
@@ -322,7 +409,10 @@ class JsonNumberDecoder(JsonDecoder[Decimal]):
             or isinstance(json, int)
             or isinstance(json, str)
         ):
-            return Boxed(Decimal(json))
+            try:
+                return Boxed(Decimal(json))
+            except DecimalException:
+                return [JsDecodeErrorFinal("Value not convertible to decimal: '%s'." % str(json))]
 
         return [
             JsDecodeErrorFinal(
@@ -464,14 +554,12 @@ class AutoJsonDecoder(Extractor[JsonDecoder[Any]]):
     def basics(self) -> Dict[type, Boxed[JsonDecoder[Any]]]:
         return self.basic_json_decoders
 
-    def product_extractor(self, t: type, fields: Dict[str, WithDefault[JsonDecoder[Any]]]) -> JsonDecoder[Any]:
+    def named_product_extractor(self, t: type, fields: Dict[str, WithDefault[JsonDecoder[Any]]]) -> JsonDecoder[Any]:
         field_decoders: Dict[str, JsonDecoder[Any]] = {
             n: v.t for (n, v) in fields.items()
         }
-        field_defaults: Dict[str, Any] = {
-            n: v.default.t
-            for (n, v) in fields.items()
-            if v.default is not None
+        field_defaults: Dict[str, Union[Boxed[Any], Callable[[], Any]]] = {
+            n: v.default for (n, v) in fields.items() if v.default is not None
         }
 
         return JsonObjectDecoder(
@@ -480,8 +568,17 @@ class AutoJsonDecoder(Extractor[JsonDecoder[Any]]):
             constructor=lambda args: t(**args),
         )
 
-    def sum_extractor(self, t: type, branches: Dict[type, JsonDecoder[Any]]) -> JsonDecoder[Any]:
-        pass
+    def unnamed_product_extractor(self, t: type, fields: List[JsonDecoder[Any]]) -> JsonDecoder[Tuple[Any, ...]]:
+        return JsonTupleDecoder(fields)
+
+    def named_sum_extractor(self, t: type, branches: Dict[str, Tuple[type, JsonDecoder[Any]]]) -> JsonDecoder[Any]:
+        return JsonTaggedDecoder(
+            branch_decoders={s: t for (s, (_, t)) in branches.items()},
+            tag_field_name=t.__name__, value_field_name=None
+        )
+
+    def unnamed_sum_extractor(self, t: type, branches: List[Tuple[type, JsonDecoder[Any]]]) -> JsonDecoder[Any]:
+        return JsonPriorityDecoder([d for (_, d) in branches])
 
     def optional_extractor(self, t: JsonDecoder[T]) -> JsonDecoder[Optional[T]]:
         return JsonOptionalDecoder(t)
