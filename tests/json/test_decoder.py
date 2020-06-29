@@ -339,3 +339,13 @@ def test_string_dictionary_decoder() -> None:
             assert False, "Invalid JSON was successfully deserialized: '%s'." % json_str
         except JsDecodeException:
             pass
+
+
+def test_composite_decoder() -> None:
+    for json_str in common.valid_composite_jsons:
+        composite = common.composite_decoder.read(json.loads(json_str))
+        assert isinstance(composite.int_g.generic_field, int)
+        assert isinstance(composite.str_g.generic_field, str)
+        assert isinstance(composite.int_list_g.generic_field, list)
+        for n in composite.int_list_g.generic_field:
+            assert isinstance(n, int)

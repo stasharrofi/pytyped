@@ -46,7 +46,8 @@ test_cases: List[Tuple[JsonEncoder[Any], JsonDecoder[Any], List[str]]] = [
     (c_nested_encoder, common.c_nested_decoder, common.c_valid_nested_json_strs),
     (c_untagged_encoder, common.c_untagged_decoder, common.c_valid_untagged_json_strs),
     (str2int_dic_encoder, common.string_to_int_dic_json_decoder, common.valid_string_dictionary_jsons),
-    (JsonNoneEncoder(), JsonNoneDecoder(), ['{}', 'null'])
+    (JsonNoneEncoder(), JsonNoneDecoder(), ['{}', 'null']),
+    (auto_json_encoder.extract(common.Composite), common.composite_decoder, common.valid_composite_jsons)
 ]
 
 

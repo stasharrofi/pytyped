@@ -5,10 +5,12 @@ from datetime import datetime
 from decimal import Decimal
 from enum import Enum
 from typing import Dict
+from typing import Generic
 from typing import List
 from typing import NamedTuple
 from typing import Optional
 from typing import Tuple
+from typing import TypeVar
 from typing import Union
 from typing import cast
 
@@ -75,6 +77,23 @@ class D:
     c2_specific: Optional[str]
 
 
+T = TypeVar("T")
+
+
+@dataclass
+class G(Generic[T]):
+    non_generic_field: str
+    generic_field: T
+
+
+@dataclass
+class Composite:
+    some_field: int
+    int_g: G[int]
+    str_g: G[str]
+    int_list_g: G[List[int]]
+
+
 valid_a_jsons = [
     '{"x": 1, "y": false, "z": "xyz"}',
     '{"x": 1, "y": false, "t": ["abc", 8]}',
@@ -129,6 +148,15 @@ valid_string_dictionary_jsons: List[str] = [
     '{"c": 1, "b": 2}',
 ]
 
+valid_composite_jsons: List[str] = [
+    """{
+    "some_field": 10,
+    "int_g": {"non_generic_field": "abc", "generic_field": 17},
+    "str_g": {"non_generic_field": "def", "generic_field": "some_string"},
+    "int_list_g": {"non_generic_field": "ghi", "generic_field": [10, 11, 12]}
+}"""
+]
+
 auto_json_decoder = AutoJsonDecoder()
 
 a_decoder = auto_json_decoder.extract(A)
@@ -150,3 +178,5 @@ c_nested_decoder = cast(
 c_untagged_decoder = cast(JsonDecoder[C], auto_json_decoder.extract(Union[C1, C2]))
 
 string_to_int_dic_json_decoder = auto_json_decoder.extract(Dict[str, int])
+
+composite_decoder = cast(JsonDecoder[Composite], auto_json_decoder.extract(Composite))
