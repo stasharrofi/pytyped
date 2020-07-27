@@ -410,15 +410,15 @@ class Extractor(Generic[T], metaclass=ABCMeta):
             self.memoized[(t, t_assignments)] = result
         return result.t
 
-    def extract(self, in_typ: type, assumptions: Optional[Dict[str, T]] = None) -> T:
+    def extract(self, in_typ: type) -> T:
         """
         :param in_typ: The type for which meta-programming needs to be initiated (i.e., generate T[in_typ])
         :param assumptions: A mapping from type variable names to their assumed generated types. This is useful when
             extracting the type of a generic class without knowing the type of its variables.
         :return: The auto generated value T[in_typ]
         """
-        self._context = assumptions.copy()
+        self._context = {}
         result: T = self._make(t=in_typ)
-        assert len(self._context) == len(assumptions), "Non-empty context at the top level."
+        assert len(self._context) == 0, "Non-empty context at the top level."
 
         return result
