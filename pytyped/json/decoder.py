@@ -293,6 +293,19 @@ class JsonMappedDecoder(JsonDecoder[T], Generic[T, U]):
 
 
 @dataclass
+class JsonFlatMappedDecoder(JsonDecoder[T], Generic[T, U]):
+    u_decoder: JsonDecoder[U]
+    u_to_t: Callable[[U], TOrError[T]]
+
+    def decode(self, json: JsValue, ancestors: List[JsValue]) -> TOrError[T]:
+        result = self.u_decoder.decode(json, ancestors)
+        if isinstance(result, Boxed):
+            transformer = cast(Callable[[U], TOrError[T]], self.u_to_t)
+            return transformer(result.t)
+        return result
+
+
+@dataclass
 class JsonBoxedDecoder(JsonDecoder[T]):
     field_name: str
     field_decoder: JsonDecoder[Any]
