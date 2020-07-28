@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from datetime import date
 from datetime import datetime
 from decimal import DecimalException
+from enum import Enum
 
 from dateutil import parser
 from decimal import Decimal
@@ -605,9 +606,26 @@ class AutoJsonDecoder(Extractor[JsonDecoder[Any]]):
         value: type,
         key_ext: JsonDecoder[Any],
         val_ext: JsonDecoder[Any]
-    ) -> JsonDecoder[Dict[str, Any]]:
+    ) -> JsonDecoder[Dict[Any, Any]]:
+        def to_enum_dict(d: Dict[str, Any]) -> TOrError[Dict[Any, Any]]:
+            result: Dict[Any, Any] = {}
+            errors: List[JsDecodeError] = []
+            for k, v in d.items():
+                try:
+                    e = cast(Enum, key_ext.read(k))
+                    result[e] = v
+                except JsDecodeException as exception:
+                    for err in exception.errors:
+                        errors.append(err)
+
+            if len(errors) > 0:
+                return errors
+            return Boxed(result)
+
         if key is str:
             return JsonStringDictionaryDecoder(val_ext)
+        if issubclass(key, Enum):
+            return JsonFlatMappedDecoder(JsonStringDictionaryDecoder(val_ext), to_enum_dict)
         raise NotImplementedError()
 
     def enum_extractor(self, enum_name: str, enum_values: List[Tuple[str, Any]]) -> JsonDecoder[Any]:

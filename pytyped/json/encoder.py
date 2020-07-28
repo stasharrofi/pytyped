@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum
+from typing import Callable
 from typing import cast, Tuple
 from typing import Any
 from typing import Dict
@@ -106,6 +107,19 @@ class JsonOptionalEncoder(JsonEncoder[Optional[T]]):
             return None
 
         return self.inner_encoder.encode(t)
+
+
+U = TypeVar("U")
+
+
+@dataclass
+class JsonMappedEncoder(JsonEncoder[T], Generic[T, U]):
+    u_encoder: JsonEncoder[U]
+    t_to_u: Callable[[T], U]
+
+    def encode(self, t: T) -> JsValue:
+        transformer = cast(Callable[[T], U], self.t_to_u)
+        return self.u_encoder.encode(transformer(t))
 
 
 @dataclass
@@ -222,9 +236,14 @@ class AutoJsonEncoder(Extractor[JsonEncoder[Any]]):
         value: type,
         key_ext: JsonEncoder[Any],
         val_ext: JsonEncoder[Any]
-    ) -> JsonEncoder[Dict[str, Any]]:
+    ) -> JsonEncoder[Dict[Any, Any]]:
+        def to_str_dict(d: Dict[Enum, Any]) -> Dict[str, Any]:
+            return {cast(str, k.value): v for k, v in d.items()}
+
         if key is str:
             return JsonStringDictionaryEncoder(val_ext)
+        if issubclass(key, Enum):
+            return JsonMappedEncoder(JsonStringDictionaryEncoder(val_ext), to_str_dict)
         raise NotImplementedError()
 
     def enum_extractor(self, enum_name: str, enum_values: List[Tuple[str, Any]]) -> JsonEncoder[Any]:
