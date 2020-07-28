@@ -87,6 +87,11 @@ class G(Generic[T]):
 
 
 @dataclass
+class G2(Generic[T]):
+    gs: List[G[T]]
+
+
+@dataclass
 class Composite:
     some_field: int
     int_g: G[int]

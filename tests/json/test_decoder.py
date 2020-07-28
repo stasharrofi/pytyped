@@ -15,6 +15,9 @@ from pytyped.json.decoder import JsonErrorAsDefaultDecoder
 from pytyped.json.decoder import JsonMappedDecoder
 from pytyped.json.decoder import JsonTaggedDecoder
 from tests.json import common
+from tests.json.common import C1
+from tests.json.common import G2
+from tests.json.common import auto_json_decoder
 
 default_a = common.A(d=None, dt=None, e=None, x=100, y=False, t=("t_str2", 20), z="default")
 a_with_default_decoder = JsonErrorAsDefaultDecoder(common.a_decoder, default_a)
@@ -349,3 +352,8 @@ def test_composite_decoder() -> None:
         assert isinstance(composite.int_list_g.generic_field, list)
         for n in composite.int_list_g.generic_field:
             assert isinstance(n, int)
+
+
+def test_nested_generics() -> None:
+    # The following just tests that extractor does not go into an infinite loop
+    auto_json_decoder.extract(G2[C1])
