@@ -281,7 +281,18 @@ class Extractor(Generic[T], metaclass=ABCMeta):
                     raise ExtractorAssignmentException(old_context, arg_name)
                 new_context[parameter_name] = old_context[arg_name]
             else:
-                new_context[parameter_name] = arg
+                if not hasattr(arg, "__parameters__") or len(arg.__parameters__) <= 0:
+                    new_context[parameter_name] = arg
+                else:
+                    concretized_params_list: List[type] = []
+                    for p in arg.__parameters__:
+                        p_name = p.__name__
+                        p_type = old_context.get(p_name)
+                        if p_type is None:
+                            raise ExtractorAssignmentException(old_context, p_name)
+                        concretized_params_list.append(p_type)
+                    concretized_params_tuple = tuple(t for t in concretized_params_list)
+                    new_context[parameter_name] = arg[concretized_params_tuple]
 
         return new_context
 

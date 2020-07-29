@@ -87,6 +87,11 @@ class G(Generic[T]):
 
 
 @dataclass
+class G2(Generic[T]):
+    gs: List[G[T]]
+
+
+@dataclass
 class Composite:
     some_field: int
     int_g: G[int]
@@ -175,7 +180,7 @@ c_nested_decoder = cast(
         value_field_name="value"
     )
 )
-c_untagged_decoder = cast(JsonDecoder[C], auto_json_decoder.extract(Union[C1, C2]))
+c_untagged_decoder = cast(JsonDecoder[C], auto_json_decoder.extract(cast(type, Union[C1, C2])))
 
 string_to_int_dic_json_decoder = auto_json_decoder.extract(Dict[str, int])
 

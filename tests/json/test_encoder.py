@@ -21,7 +21,7 @@ auto_json_encoder = AutoJsonEncoder()
 
 a_encoder = auto_json_encoder.extract(common.A)
 b_encoder = auto_json_encoder.extract(common.B)
-boxed_a_encoder = JsonBoxedEncoder("value", a_encoder)
+boxed_a_encoder: JsonBoxedEncoder[common.A] = JsonBoxedEncoder("value", a_encoder)
 c_flat_encoder = auto_json_encoder.extract(common.C)
 c_nested_encoder = cast(
     JsonEncoder[common.C],
@@ -34,7 +34,7 @@ c_nested_encoder = cast(
         value_field_name="value"
     )
 )
-c_untagged_encoder = cast(JsonEncoder[common.C], auto_json_encoder.extract(Union[common.C1, common.C2]))
+c_untagged_encoder = cast(JsonEncoder[common.C], auto_json_encoder.extract(cast(type, Union[common.C1, common.C2])))
 str2int_dic_encoder = auto_json_encoder.extract(Dict[str, int])
 
 
