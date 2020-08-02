@@ -231,30 +231,31 @@ class Extractor(Generic[T], metaclass=ABCMeta):
         return fields
 
     @staticmethod
-    def extract_if_list_type(t: type) -> Optional[Boxed[type]]:
+    def extract_if_list_type(t: type) -> Optional[Boxed[str]]:
         """
         :param t: type that needs to be checked for being a list.
-        :return: Returns `Boxed(X)` if `t` is the type `List[X]` and returns None otherwise.
+        :return: Returns `Boxed("X")` if `t` is the type `List[X]` with X being the type variable name used by `List`.
         """
         if not hasattr(t, "__origin__"):
             return None
-        if t.__origin__ not in [list, List]:  # type: ignore
+        origin = cast(type, t.__origin__)  # type: ignore
+        if origin not in [list, List]:
             return None
-        t = cast(Type[List[Any]], t)
-        return Boxed(t.__args__[0])  # type: ignore
+        return Boxed(origin.__parameters__[0].__name__)  # type: ignore
 
     @staticmethod
-    def extract_if_dictionary_type(t: type) -> Optional[Boxed[Tuple[type, type]]]:
+    def extract_if_dictionary_type(t: type) -> Optional[Boxed[Tuple[str, str]]]:
         """
         :param t: type that needs to be checked for being a dictionary.
-        :return: Returns `Boxed((X, Y))` if `t` is the type `Dict[X, Y]` and returns None otherwise.
+        :return: Returns `Boxed(("X", "Y"))` if `t` is the type `Dict[X, Y]` and X and Y are type variable names
+                 for key and value types respectively.
         """
         if not hasattr(t, "__origin__"):
             return None
-        if t.__origin__ not in [dict, Dict]:  # type: ignore
+        origin = cast(type, t.__origin__)  # type: ignore
+        if origin not in [dict, Dict]:
             return None
-        t = cast(Type[Dict[Any, Any]], t)
-        return Boxed((t.__args__[0], t.__args__[1]))  # type: ignore
+        return Boxed((origin.__parameters__[0].__name__, origin.__parameters__[1].__name__))  # type: ignore
 
     @staticmethod
     def apply_assignments(t: type, old_context: Dict[str, type]) -> Dict[str, type]:
@@ -309,14 +310,18 @@ class Extractor(Generic[T], metaclass=ABCMeta):
         assignments: Dict[str, type] = {}
         for parameter in t.__parameters__:  # type:ignore
             parameter_name: str = cast(str, parameter.__name__)
-            if parameter_name not in self._context:
-                raise ExtractorAssignmentException(self._context.copy(), parameter_name)
-            assignments[parameter_name] = self._context[parameter_name]
+            assignments[parameter_name] = self._var_to_type(parameter_name)
 
         return frozenset(assignments.items())
 
     def add_special(self, typ: type, value: T) -> None:
         self.memoized[(typ, self.assignments(typ))] = Boxed(value)
+
+    def _var_to_type(self, var_name: str) -> type:
+        if var_name not in self._context:
+            raise ExtractorAssignmentException(self._context.copy(), var_name)
+        list_inner_type = self._context[var_name]
+        return list_inner_type
 
     def _extract_basic_type(self, t: type) -> Optional[Boxed[T]]:
         return self.basics.get(t)
@@ -366,16 +371,22 @@ class Extractor(Generic[T], metaclass=ABCMeta):
         return Boxed(self.named_sum_extractor(sum_type, extracted_branches))
 
     def _extract_list_type(self, list_type: type) -> Optional[Boxed[T]]:
-        maybe_list_type = Extractor.extract_if_list_type(list_type)
-        if maybe_list_type is None:
+        maybe_list_var_name = Extractor.extract_if_list_type(list_type)
+        if maybe_list_var_name is None:
             return None
-        return Boxed(self.list_extractor(self._make(maybe_list_type.t)))
+
+        list_inner_type = self._var_to_type(maybe_list_var_name.t)
+
+        return Boxed(self.list_extractor(self._make(list_inner_type)))
 
     def _extract_dictionary_type(self, dict_type: type) -> Optional[Boxed[T]]:
-        maybe_dict_type = Extractor.extract_if_dictionary_type(dict_type)
-        if maybe_dict_type is None:
+        maybe_dict_vars = Extractor.extract_if_dictionary_type(dict_type)
+        if maybe_dict_vars is None:
             return None
-        (key_type, value_type) = maybe_dict_type.t
+        (key_var_name, value_var_name) = maybe_dict_vars.t
+        key_type = self._var_to_type(key_var_name)
+        value_type = self._var_to_type(value_var_name)
+
         key_extractor = self._make(key_type)
         value_extractor = self._make(value_type)
         return Boxed(self.dictionary_extractor(key_type, value_type, key_extractor, value_extractor))
@@ -393,10 +404,7 @@ class Extractor(Generic[T], metaclass=ABCMeta):
 
     def _make(self, t: type) -> T:
         if isinstance(t, TypeVar):  # type: ignore
-            t_name: str = cast(str, t.__name__)  # type: ignore
-            if t_name not in self._context:
-                raise ExtractorAssignmentException(self._context.copy(), t_name)
-            t = self._context[t_name]
+            t = self._var_to_type(t.__name__)
 
         result: Optional[Boxed[T]] = self.memoized.get((t, self.assignments(t)))
 
