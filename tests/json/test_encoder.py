@@ -16,6 +16,9 @@ from pytyped.json.encoder import JsonEncoderException
 from pytyped.json.encoder import JsonNoneEncoder
 from pytyped.json.encoder import JsonTaggedEncoder
 from tests.json import common
+from tests.json.common import C1
+from tests.json.common import G
+from tests.json.common import G2
 
 auto_json_encoder = AutoJsonEncoder()
 
@@ -76,3 +79,10 @@ def test_unknown_subclass() -> None:
             assert False, "Unknown class C3 (at the time of encoder extraction) was successfully serialized"
         except JsonEncoderException:
             pass
+
+
+def test_nested_generics() -> None:
+    # The following just tests that extractor does not go into an infinite loop
+    auto_json_encoder.extract(G2[C1])
+    auto_json_encoder.extract(G[G[C1]])
+    auto_json_encoder.extract(G[G[G[C1]]])
