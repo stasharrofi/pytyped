@@ -19,151 +19,191 @@ from typing import cast
 from pytyped.macros.boxed import Boxed
 from pytyped.macros.extractor import Extractor
 from pytyped.macros.extractor import WithDefault
+from pytyped.metrics.common import MetricsBranch
 from pytyped.metrics.common import MetricsLeaf
-from pytyped.metrics.common import MetricsNamedCollection
-from pytyped.metrics.common import MetricsTag
+from pytyped.metrics.common import MetricsNone
+from pytyped.metrics.common import MetricsTags
 from pytyped.metrics.common import MetricsTree
-from pytyped.metrics.common import MetricsUnnamedCollection
 
 T = TypeVar("T")
 
 
 class MetricsExporter(Generic[T], metaclass=ABCMeta):
     @abstractmethod
-    def export(self, t: T) -> MetricsTree:
+    def outer_tags(self, name: str, t: T) -> Dict[str, str]:
+       pass
+
+    @abstractmethod
+    def export(self, name: str, t: T) -> MetricsTree:
         pass
 
 
 @dataclass
 class ValueExporter(MetricsExporter[Union[int, float, Decimal]]):
-    def export(self, t: Union[int, float, Decimal]) -> MetricsTree:
-        return MetricsLeaf(t)
+    def outer_tags(self, name: str, t: Union[int, float, Decimal]) -> Dict[str, str]:
+        return {}
+
+    def export(self, name: str, t: Union[int, float, Decimal]) -> MetricsTree:
+        return MetricsLeaf(name, t)
 
 
 @dataclass
 class TagExporter(MetricsExporter[str]):
-    def export(self, t: str) -> MetricsTree:
-        return MetricsTag(None, t)
+    def outer_tags(self, name: str, t: str) -> Dict[str, str]:
+        return {name: t}
+
+    def export(self, name: str, t: str) -> MetricsTree:
+        return MetricsNone()
 
 
 @dataclass
 class BooleanExporter(MetricsExporter[bool]):
-    def export(self, t: bool) -> MetricsTree:
-        return MetricsTag(None, "yes" if t else "no")
+    def outer_tags(self, name: str, t: bool) -> Dict[str, str]:
+        return {name: "yes" if t else "no"}
+
+    def export(self, name: str, t: bool) -> MetricsTree:
+        return MetricsNone()
 
 
 class DateExporter(MetricsExporter[date]):
     _weekday_names: List[str] = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
-    def export(self, t: date) -> MetricsTree:
-        return MetricsUnnamedCollection([
-            MetricsTag("_day", str(t.day)),
-            MetricsTag("_month", str(t.month)),
-            MetricsTag("_year", str(t.year)),
-            MetricsTag("_weekday", DateExporter._weekday_names[t.weekday()]),
-        ])
+    def outer_tags(self, name: str, t: date) -> Dict[str, str]:
+        return {
+            name + "_day": str(t.day),
+            name + "_month": str(t.month),
+            name + "_year": str(t.year),
+            name + "_weekday": DateExporter._weekday_names[t.weekday()]
+        }
+
+    def export(self, name: str, t: T) -> MetricsTree:
+        return MetricsNone()
 
 
 class DateTimeExporter(MetricsExporter[datetime]):
     _date_exporter: DateExporter = DateExporter()
 
-    def export(self, t: datetime) -> MetricsTree:
-        tags = DateTimeExporter._date_exporter.export(t.date())
-        assert isinstance(tags, MetricsUnnamedCollection)
-
-        tags.children.append(MetricsTag("_hour", str(t.hour)))
+    def outer_tags(self, name: str, t: datetime) -> Dict[str, str]:
+        tags = self._date_exporter.outer_tags(name, t.date())
+        tags[name + "_hour"] = str(t.hour)
 
         return tags
+
+    def export(self, name: str, t: datetime) -> MetricsTree:
+        return MetricsNone()
 
 
 @dataclass
 class NamedProductExporter(MetricsExporter[T]):
     field_exporters: Dict[str, MetricsExporter[Any]]
 
-    def export(self, t: T) -> MetricsTree:
+    def outer_tags(self, name: str, t: T) -> Dict[str, str]:
+        return {}
+
+    def export(self, name: str, t: T) -> MetricsTree:
         d: Dict[str, Any]
         if hasattr(t, "_asdict"):
             d = cast(NamedTuple, t)._asdict()
         else:
             d = t.__dict__
 
-        return MetricsNamedCollection({
-            field_name: field_exporter.export(d[field_name])
+        tags: Dict[str, str] = {}
+        for field_name, field_exporter in self.field_exporters.items():
+            tags.update(field_exporter.outer_tags(name + "." + field_name, d[field_name]))
+
+        result: MetricsTree = MetricsBranch([
+            field_exporter.export(name + "." + field_name, d[field_name])
             for field_name, field_exporter in self.field_exporters.items()
-        })
+        ])
+        if len(tags) > 0:
+            result = MetricsTags(tags, result)
+
+        return result
 
 
 @dataclass
 class TupleExporter(MetricsExporter[Tuple[Any, ...]]):
     exporters: List[MetricsExporter[Any]]
 
-    def export(self, t: Tuple[Any, ...]) -> MetricsTree:
-        return MetricsUnnamedCollection([e.export(v) for v, e in zip(t, self.exporters)])
+    def outer_tags(self, name: str, t: Tuple[Any, ...]) -> Dict[str, str]:
+        return {}
+
+    def export(self, name: str, t: Tuple[Any, ...]) -> MetricsTree:
+        return MetricsBranch([e.export(name, v) for v, e in zip(t, self.exporters)])
 
 
 @dataclass
 class ListExporter(MetricsExporter[List[T]]):
     inner_exporter: MetricsExporter[T]
 
-    def export(self, t: List[T]) -> MetricsTree:
-        return MetricsUnnamedCollection([self.inner_exporter.export(v) for v in t])
+    def outer_tags(self, name: str, t: List[T]) -> Dict[str, str]:
+        return {}
+
+    def export(self, name: str, t: List[T]) -> MetricsTree:
+        return MetricsBranch([self.inner_exporter.export(name, v) for v in t])
 
 
 @dataclass
 class TaggedExporter(MetricsExporter[T]):
     branches: Dict[str, Tuple[type, MetricsExporter[Any]]]
-    tag_postfix: Optional[str] = None
+    tag_tag: str
 
-    def export(self, t: T) -> MetricsTree:
+    def outer_tags(self, name: str, t: T) -> Dict[str, str]:
+        return {}
+
+    def export(self, name: str, t: T) -> MetricsTree:
         for branch_name, (branch_type, exporter) in self.branches.items():
             if isinstance(t, branch_type):
-                exported_value: MetricsTree = exporter.export(t)
-                return MetricsUnnamedCollection([
-                    MetricsTag(self.tag_postfix, branch_name),
-                    exported_value
-                ])
+                exported_value: MetricsTree = exporter.export(name, t)
+                return MetricsTags({name + "." + self.tag_tag: branch_name}, exported_value)
 
-        return MetricsUnnamedCollection([])
+        return MetricsNone()
 
 
 @dataclass
 class PriorityExporter(MetricsExporter[T]):
     branches: List[Tuple[type, MetricsExporter[Any]]]
 
-    def export(self, t: T) -> MetricsTree:
+    def outer_tags(self, name: str, t: T) -> Dict[str, str]:
+        return {}
+
+    def export(self, name: str, t: T) -> MetricsTree:
         for branch_type, exporter in self.branches:
             if isinstance(t, branch_type):
-                return exporter.export(t)
+                return exporter.export(name, t)
 
-        return MetricsUnnamedCollection([])
+        return MetricsNone()
 
 
 @dataclass
 class OptionalExporter(MetricsExporter[Optional[T]]):
     exporter: MetricsExporter[T]
 
-    def export(self, t: Optional[T]) -> MetricsTree:
-        if t is None:
-            return MetricsTag("_present", "no")
+    def outer_tags(self, name: str, t: Optional[T]) -> Dict[str, str]:
+        return {name + "_present": "no" if t is None else "yes"}
 
-        return MetricsUnnamedCollection([
-            MetricsTag("_present", "yes"),
-            self.exporter.export(t)
-        ])
+    def export(self, name: str, t: Optional[T]) -> MetricsTree:
+        return MetricsNone() if t is None else self.exporter.export(name, t)
 
 
 @dataclass
 class StringDictionaryExporter(MetricsExporter[Dict[str, T]]):
     element_exporter: MetricsExporter[T]
 
-    def export(self, d: Dict[str, T]) -> MetricsTree:
-        return MetricsNamedCollection({k: self.element_exporter.export(v) for k, v in d.items()})
+    def outer_tags(self, name: str, t: Dict[str, T]) -> Dict[str, str]:
+        return {}
+
+    def export(self, name: str, d: Dict[str, T]) -> MetricsTree:
+        return MetricsBranch([MetricsTags({name: k}, self.element_exporter.export(name, v)) for k, v in d.items()])
 
 
 @dataclass
 class EnumExporter(MetricsExporter[Enum]):
-    def export(self, t: Enum) -> MetricsTree:
-        return MetricsTag(None, str(t.value))
+    def outer_tags(self, name: str, t: Enum) -> Dict[str, str]:
+        return {name: str(t.value)}
+
+    def export(self, name: str, t: Enum) -> MetricsTree:
+        return MetricsNone()
 
 
 class AutoMetricExporter(Extractor[MetricsExporter[Any]]):
@@ -197,7 +237,7 @@ class AutoMetricExporter(Extractor[MetricsExporter[Any]]):
         t: type,
         branches: Dict[str, Tuple[type, MetricsExporter[Any]]]
     ) -> MetricsExporter[Any]:
-        return TaggedExporter(branches=branches, tag_postfix="_" + t.__name__)
+        return TaggedExporter(branches=branches, tag_tag=t.__name__)
 
     def unnamed_sum_extractor(self, t: type, branches: List[Tuple[type, MetricsExporter[Any]]]) -> MetricsExporter[Any]:
         return PriorityExporter(branches=branches)

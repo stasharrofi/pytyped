@@ -11,12 +11,6 @@ from typing import Union
 
 
 @dataclass
-class MetricContext:
-    name: str
-    properties: Dict[str, str]
-
-
-@dataclass
 class Metric:
     """
         A metric is a contextualized numerical value with contextualized meaning that it has a name,
@@ -24,91 +18,44 @@ class Metric:
     """
     name: str
     value: Union[int, float, Decimal]
-    lineage: List[MetricContext]  # The first value in the list is considered to be the parent
+    tags: Dict[str, str]  # The first value in the list is considered to be the parent
 
 
 class MetricsTree(metaclass=ABCMeta):
     @abstractmethod
-    def to_metrics(self, name: str) -> List[Metric]:
+    def to_metrics(self, tag_context: Dict[str, str]) -> List[Metric]:
         pass
 
 
-class MetricsTreeFinal(MetricsTree, metaclass=ABCMeta):
-    pass
-
-
 @dataclass
-class MetricsTag(MetricsTreeFinal):
-    postfix: Optional[str]
-    value: str
-
-    def full_name(self, name: str) -> str:
-        return name + ("" if self.postfix is None else self.postfix)
-
-    def to_metrics(self, name: str) -> List[Metric]:
+class MetricsNone(MetricsTree):
+    def to_metrics(self, tag_context: Dict[str, str]) -> List[Metric]:
         return []
 
 
 @dataclass
-class MetricsLeaf(MetricsTreeFinal):
+class MetricsLeaf(MetricsTree):
+    name: str
     value: Union[int, float, Decimal]
 
-    def to_metrics(self, name: str) -> List[Metric]:
-        return [Metric(name, self.value, [])]
-
-
-class MetricsTreeInternal(MetricsTree, metaclass=ABCMeta):
-    pass
+    def to_metrics(self, tag_context: Dict[str, str]) -> List[Metric]:
+        return [Metric(self.name, self.value, tag_context)]
 
 
 @dataclass
-class MetricsUnnamedCollection(MetricsTreeInternal):
+class MetricsTags(MetricsTree):
+    tags: Dict[str, str]
+    internal: MetricsTree
+
+    def to_metrics(self, tag_context: Dict[str, str]) -> List[Metric]:
+        tag_context = tag_context.copy()
+        tag_context.update(self.tags)
+        return self.internal.to_metrics(tag_context)
+
+
+@dataclass
+class MetricsBranch(MetricsTree):
     children: List[MetricsTree]
 
-    def to_tags(self, name: str) -> Dict[str, str]:
-        return {tag.full_name(name): tag.value for tag in self.children if isinstance(tag, MetricsTag)}
-
-    def to_metrics(self, name: str) -> List[Metric]:
-        leaf_metrics: List[Metric] = [
-            Metric(name=name, value=child.value, lineage=[])
-            for child in self.children
-            if isinstance(child, MetricsLeaf)
-        ]
-
-        children_metrics: List[Metric] = list(itertools.chain.from_iterable([
-            child.to_metrics(name) for child in self.children if isinstance(child, MetricsTreeInternal)
-        ]))
-
-        return leaf_metrics + children_metrics
-
-
-@dataclass
-class MetricsNamedCollection(MetricsTreeInternal):
-    children: Dict[str, MetricsTree]
-
-    def to_metrics(self, name: str) -> List[Metric]:
-        props: Dict[str, str] = {}
-        for l_name, l in self.children.items():
-            if isinstance(l, MetricsUnnamedCollection):
-                props.update(l.to_tags(l_name))
-        props.update({
-            tag.full_name(tag_name): tag.value for tag_name, tag in self.children.items() if isinstance(tag, MetricsTag)
-        })
-
-        context = MetricContext(name=name, properties=props)
-
-        leaf_metrics: List[Metric] = [
-            Metric(name=child_name, value=child.value, lineage=[context])
-            for child_name, child in self.children.items()
-            if isinstance(child, MetricsLeaf)
-        ]
-
-        children_metrics: List[Metric] = list(itertools.chain.from_iterable([
-            child.to_metrics(child_name)
-            for child_name, child in self.children.items()
-            if isinstance(child, MetricsTreeInternal)
-        ]))
-        for m in children_metrics:
-            m.lineage.append(context)
-
-        return leaf_metrics + children_metrics
+    def to_metrics(self, tag_context: Dict[str, str]) -> List[Metric]:
+        return [m for child in self.children for m in child.to_metrics(tag_context)]
