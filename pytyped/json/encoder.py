@@ -192,6 +192,7 @@ class AutoJsonEncoder(Extractor[JsonEncoder[Any]]):
         bool: Boxed(json_basic_encoder),
         str: Boxed(json_basic_encoder),
         int: Boxed(json_basic_encoder),
+        float: Boxed(json_basic_encoder),
         Decimal: Boxed(json_decimal_encoder),
         datetime: Boxed(json_date_encoder),
         date: Boxed(json_date_encoder),
