@@ -28,7 +28,9 @@ class Metric:
 
 
 class MetricsTree(metaclass=ABCMeta):
-    pass
+    @abstractmethod
+    def to_metrics(self, name: str) -> List[Metric]:
+        pass
 
 
 class MetricsTreeFinal(MetricsTree, metaclass=ABCMeta):
@@ -43,16 +45,20 @@ class MetricsTag(MetricsTreeFinal):
     def full_name(self, name: str) -> str:
         return name + ("" if self.postfix is None else self.postfix)
 
+    def to_metrics(self, name: str) -> List[Metric]:
+        return []
+
 
 @dataclass
 class MetricsLeaf(MetricsTreeFinal):
     value: Union[int, float, Decimal]
 
+    def to_metrics(self, name: str) -> List[Metric]:
+        return [Metric(name, self.value, [])]
+
 
 class MetricsTreeInternal(MetricsTree, metaclass=ABCMeta):
-    @abstractmethod
-    def to_metrics(self, name: str) -> List[Metric]:
-        pass
+    pass
 
 
 @dataclass
