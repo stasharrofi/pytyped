@@ -4,11 +4,11 @@ with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setuptools.setup(
-    name="pytyped-stasharrofi", # Replace with your own username
+    name="pytyped",
     version="0.0.1",
     author="Shahab Tasharrofi",
     author_email="shahab.tasharrofi@gmail.com",
-    description="Typing utilities for Python",
+    description="Type-Driven Development for Python",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/stasharrofi/pytyped",
