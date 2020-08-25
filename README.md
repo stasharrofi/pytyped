@@ -4,6 +4,16 @@
 We believe in using types to automate mundane and repetitive tasks.
 Currently, given a type, JSON decoders/encoders and metric extractors can be automatically extracted for that type.
 
+### Installation
+
+You can install `pytyped` from [PyPI](https://pypi.org/):
+
+```
+pip install pytyped
+```
+
+`pytyped` is checked on `Python 3.6+`.
+
 ### Using `pytyped` to extract JSON decoders/encoders
 
 First, define your type. For example, in the following we want to define an account that can either be a personal
@@ -108,21 +118,21 @@ pytyped.json.decoder.JsDecodeException: Found 1 errors while validating JSON: [
   Error when decoding JSON: /representatives[1]/last_name: Non-optional field was not found]
 ```
 
-## Using pytyped to extract metrics
+### Using pytyped to extract metrics
 
 Similar to extracting JSON decoders/encoders except that `pytyped.metrics.exporter.AutoMetricExporter` is used.
 Further explanation is WIP.
 
-## Defining New Type Automations
+### Defining New Type Automations
 
 You can follow the examples of JSON decoders, JSON encoders, and metric exporters to define new type-based automations.
 You just need to extend `pytyped.macros.extractor.Extractor` and implement the abstrtact methods there.
 Further explanation is WIP.
 
-## Issues
+### Issues
 
 Please report any issues to the [GitHub repository for this package](https://github.com/stasharrofi/pytyped).
 
-## Contributors
+### Contributors
 
 - [Shahab Tasharrofi](mailto:shahab.tasharrofi@gmail.com)
