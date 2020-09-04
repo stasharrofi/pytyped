@@ -239,9 +239,11 @@ class Extractor(Generic[T], metaclass=ABCMeta):
         if not hasattr(t, "__origin__"):
             return None
         origin = cast(type, t.__origin__)  # type: ignore
-        if origin not in [list, List]:
-            return None
-        return Boxed(origin.__parameters__[0].__name__)  # type: ignore
+        if origin is List:
+            return Boxed(origin.__parameters__[0].__name__)  # type: ignore
+        if origin is list:
+            return Boxed(t.__args__[0])
+        return None
 
     @staticmethod
     def extract_if_dictionary_type(t: type) -> Optional[Boxed[Tuple[str, str]]]:
@@ -253,9 +255,11 @@ class Extractor(Generic[T], metaclass=ABCMeta):
         if not hasattr(t, "__origin__"):
             return None
         origin = cast(type, t.__origin__)  # type: ignore
-        if origin not in [dict, Dict]:
-            return None
-        return Boxed((origin.__parameters__[0].__name__, origin.__parameters__[1].__name__))  # type: ignore
+        if origin is Dict:
+            return Boxed((origin.__parameters__[0].__name__, origin.__parameters__[1].__name__))  # type: ignore
+        if origin is dict:
+            return Boxed((t.__args__[0], t.__args__[1]))  # type: ignore
+        return None
 
     @staticmethod
     def apply_assignments(t: type, old_context: Dict[str, type]) -> Dict[str, type]:
