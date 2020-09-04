@@ -136,3 +136,4 @@ Please report any issues to the [GitHub repository for this package](https://git
 ### Contributors
 
 - [Shahab Tasharrofi](mailto:shahab.tasharrofi@gmail.com)
+- [Ilyess Bachiri](mailto:bachiri.ilyess@gmail.com)
