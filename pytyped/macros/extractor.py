@@ -231,7 +231,7 @@ class Extractor(Generic[T], metaclass=ABCMeta):
         return fields
 
     @staticmethod
-    def extract_if_list_type(t: type) -> Optional[Boxed[str]]:
+    def extract_if_list_type(t: type) -> Union[None, str, Boxed[type]]:
         """
         :param t: type that needs to be checked for being a list.
         :return: Returns `Boxed("X")` if `t` is the type `List[X]` with X being the type variable name used by `List`.
@@ -240,13 +240,13 @@ class Extractor(Generic[T], metaclass=ABCMeta):
             return None
         origin = cast(type, t.__origin__)  # type: ignore
         if origin is List:
-            return Boxed(origin.__parameters__[0].__name__)  # type: ignore
+            return origin.__parameters__[0].__name__  # type: ignore
         if origin is list:
-            return Boxed(t.__args__[0])
+            return Boxed(t.__args__[0])  # type: ignore
         return None
 
     @staticmethod
-    def extract_if_dictionary_type(t: type) -> Optional[Boxed[Tuple[str, str]]]:
+    def extract_if_dictionary_type(t: type) -> Union[None, Tuple[str, str], Boxed[Tuple[type, type]]]:
         """
         :param t: type that needs to be checked for being a dictionary.
         :return: Returns `Boxed(("X", "Y"))` if `t` is the type `Dict[X, Y]` and X and Y are type variable names
@@ -256,7 +256,7 @@ class Extractor(Generic[T], metaclass=ABCMeta):
             return None
         origin = cast(type, t.__origin__)  # type: ignore
         if origin is Dict:
-            return Boxed((origin.__parameters__[0].__name__, origin.__parameters__[1].__name__))  # type: ignore
+            return origin.__parameters__[0].__name__, origin.__parameters__[1].__name__  # type: ignore
         if origin is dict:
             return Boxed((t.__args__[0], t.__args__[1]))  # type: ignore
         return None
@@ -379,7 +379,11 @@ class Extractor(Generic[T], metaclass=ABCMeta):
         if maybe_list_var_name is None:
             return None
 
-        list_inner_type = self._var_to_type(maybe_list_var_name.t)
+        list_inner_type: type
+        if isinstance(maybe_list_var_name, str):
+            list_inner_type = self._var_to_type(maybe_list_var_name)
+        else:
+            list_inner_type = maybe_list_var_name.t
 
         return Boxed(self.list_extractor(self._make(list_inner_type)))
 
@@ -387,9 +391,15 @@ class Extractor(Generic[T], metaclass=ABCMeta):
         maybe_dict_vars = Extractor.extract_if_dictionary_type(dict_type)
         if maybe_dict_vars is None:
             return None
-        (key_var_name, value_var_name) = maybe_dict_vars.t
-        key_type = self._var_to_type(key_var_name)
-        value_type = self._var_to_type(value_var_name)
+
+        key_type: type
+        value_type: type
+        if isinstance(maybe_dict_vars, Boxed):
+            key_type, value_type = maybe_dict_vars.t
+        else:
+            (key_var_name, value_var_name) = maybe_dict_vars
+            key_type = self._var_to_type(key_var_name)
+            value_type = self._var_to_type(value_var_name)
 
         key_extractor = self._make(key_type)
         value_extractor = self._make(value_type)
