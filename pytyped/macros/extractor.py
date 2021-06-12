@@ -19,6 +19,7 @@ from typing import TypeVar
 from typing import Union
 
 from pytyped.macros.boxed import Boxed
+from pytyped.macros.pyjack import replace_all_refs
 
 
 @dataclass
@@ -64,6 +65,11 @@ class UnnamedUnionDescriptor:
 class NamedUnionDescriptor:
     branches: Dict[str, type]  # Mapping of names to branches
 
+
+@dataclass
+class RecursiveTypeApplication:
+    ref_count: int
+    typ: type
 
 class Extractor(Generic[T], metaclass=ABCMeta):
     # Memoized values for types that have already been extracted.
@@ -420,11 +426,21 @@ class Extractor(Generic[T], metaclass=ABCMeta):
         if isinstance(t, TypeVar):  # type: ignore
             t = self._var_to_type(t.__name__)
 
-        result: Optional[Boxed[T]] = self.memoized.get((t, self.assignments(t)))
+        t_assignments = self.assignments(t)
+        key = (t, t_assignments)
+        if key in self.memoized:
+            result = self.memoized[key].t
+            if isinstance(result, RecursiveTypeApplication):
+                result.ref_count = result.ref_count + 1
+            return result
+
+        recursion_placeholder = RecursiveTypeApplication(0, t)
+        self.memoized[key] = Boxed(recursion_placeholder)
 
         old_context = self._context
         self._context = Extractor.apply_assignments(t, self._context)
 
+        result: Optional[Boxed[T]] = None
         result = Extractor.or_else(result, lambda: self._extract_basic_type(t))
         result = Extractor.or_else(result, lambda: self._extract_unnamed_sum_type(t))
         result = Extractor.or_else(result, lambda: self._extract_named_sum_type(t))
@@ -437,10 +453,10 @@ class Extractor(Generic[T], metaclass=ABCMeta):
         if result is None:
             raise UnknownExtractorException(t)
 
+        if recursion_placeholder.ref_count > 0:
+            replace_all_refs(recursion_placeholder, result.t)
         self._context = old_context
-        t_assignments = self.assignments(t)
-        if (t, t_assignments) not in self.memoized:
-            self.memoized[(t, t_assignments)] = result
+        self.memoized[key] = result
         return result.t
 
     def extract(self, in_typ: type) -> T:

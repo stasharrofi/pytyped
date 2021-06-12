@@ -99,6 +99,23 @@ class Composite:
     int_list_g: G[List[int]]
 
 
+@dataclass
+class IntBinaryTree:
+    pass
+
+
+@dataclass
+class IntBinaryLeafNode(IntBinaryTree):
+    value: int
+
+
+@dataclass
+class IntBinaryInternalNode(IntBinaryTree):
+    value: int
+    left: IntBinaryTree
+    right: IntBinaryTree
+
+
 valid_a_jsons = [
     '{"x": 1, "y": false, "z": "xyz"}',
     '{"x": 1, "y": false, "t": ["abc", 8]}',
@@ -159,6 +176,29 @@ valid_composite_jsons: List[str] = [
     "int_g": {"non_generic_field": "abc", "generic_field": 17},
     "str_g": {"non_generic_field": "def", "generic_field": "some_string"},
     "int_list_g": {"non_generic_field": "ghi", "generic_field": [10, 11, 12]}
+}"""
+]
+
+valid_binary_int_tree_jsons: List[str] = [
+    """{
+    "IntBinaryTree": "IntBinaryInternalNode",
+    "value": 0,
+    "left": {
+        "IntBinaryTree": "IntBinaryLeafNode",
+        "value": 1
+    },
+    "right": {
+        "IntBinaryTree": "IntBinaryInternalNode",
+        "value": 2,
+        "left": {
+            "IntBinaryTree": "IntBinaryLeafNode",
+            "value": 3
+        },
+        "right": {
+            "IntBinaryTree": "IntBinaryLeafNode",
+            "value": 4
+        }
+    }
 }"""
 ]
 
