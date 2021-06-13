@@ -116,6 +116,22 @@ class IntBinaryInternalNode(IntBinaryTree):
     right: IntBinaryTree
 
 
+@dataclass
+class Tree(Generic[T]):
+    value: T
+
+
+@dataclass
+class Leaf(Tree[T], Generic[T]):
+    pass
+
+
+@dataclass
+class Node(Tree[T], Generic[T]):
+    left: Tree[T]
+    right: Tree[T]
+
+
 valid_a_jsons = [
     '{"x": 1, "y": false, "z": "xyz"}',
     '{"x": 1, "y": false, "t": ["abc", 8]}',
@@ -196,6 +212,29 @@ valid_binary_int_tree_jsons: List[str] = [
         },
         "right": {
             "IntBinaryTree": "IntBinaryLeafNode",
+            "value": 4
+        }
+    }
+}"""
+]
+
+valid_int_trees: List[str] = [
+    """{
+    "Tree": "Node",
+    "value": 0,
+    "left": {
+        "Tree": "Leaf",
+        "value": 1
+    },
+    "right": {
+        "Tree": "Node",
+        "value": 2,
+        "left": {
+            "Tree": "Leaf",
+            "value": 3
+        },
+        "right": {
+            "Tree": "Leaf",
             "value": 4
         }
     }

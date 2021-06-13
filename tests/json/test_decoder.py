@@ -16,7 +16,8 @@ from pytyped.json.decoder import JsonErrorAsDefaultDecoder
 from pytyped.json.decoder import JsonMappedDecoder
 from pytyped.json.decoder import JsonTaggedDecoder
 from tests.json import common
-from tests.json.common import C1, G, G2, IntBinaryTree, auto_json_decoder, valid_binary_int_tree_jsons
+from tests.json.common import C1, G, G2, IntBinaryTree, auto_json_decoder, valid_binary_int_tree_jsons, valid_int_trees, \
+    Tree
 
 default_a = common.A(d=None, dt=None, e=None, x=100, y=False, t=("t_str2", 20), z="default")
 a_with_default_decoder = JsonErrorAsDefaultDecoder(common.a_decoder, default_a)
@@ -364,6 +365,18 @@ def test_nested_generics() -> None:
 def test_int_binary_tree(json_str: str) -> None:
     json_obj = json.loads(json_str)
     decoder = auto_json_decoder.extract(IntBinaryTree)
+    tree_instance = decoder.read(json_obj)
+    assert tree_instance.value == 0
+    assert tree_instance.left.value == 1
+    assert tree_instance.right.value == 2
+    assert tree_instance.right.left.value == 3
+    assert tree_instance.right.right.value == 4
+
+
+@pytest.mark.parametrize("json_str", valid_int_trees)
+def test_binary_tree_int(json_str: str) -> None:
+    json_obj = json.loads(json_str)
+    decoder = auto_json_decoder.extract(Tree[int])
     tree_instance = decoder.read(json_obj)
     assert tree_instance.value == 0
     assert tree_instance.left.value == 1
