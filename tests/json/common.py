@@ -1,18 +1,11 @@
+from attr import s
 from dataclasses import dataclass
 from dataclasses import field
 from datetime import date
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
-from typing import Dict
-from typing import Generic
-from typing import List
-from typing import NamedTuple
-from typing import Optional
-from typing import Tuple
-from typing import TypeVar
-from typing import Union
-from typing import cast
+from typing import Any, Dict, Generic, List, NamedTuple, Optional, Tuple, TypeVar, Union, cast
 
 from pytyped.json.decoder import AutoJsonDecoder
 from pytyped.json.decoder import JsonBoxedDecoder
@@ -132,6 +125,28 @@ class Node(Tree[T], Generic[T]):
     right: Tree[T]
 
 
+@dataclass
+class WideTree(Generic[T]):
+    def collect(self) -> Any:
+        raise NotImplementedError()
+
+
+@dataclass
+class WideNode(WideTree[T], Generic[T]):
+    children: List[WideTree[T]]
+
+    def collect(self) -> Any:
+        return [child.collect() for child in self.children]
+
+
+@dataclass
+class WideLeaf(WideTree[T], Generic[T]):
+    value: T
+
+    def collect(self) -> Any:
+        return self.value
+
+
 valid_a_jsons = [
     '{"x": 1, "y": false, "z": "xyz"}',
     '{"x": 1, "y": false, "t": ["abc", 8]}',
@@ -238,6 +253,35 @@ valid_int_trees: List[str] = [
             "value": 4
         }
     }
+}"""
+]
+
+valid_wide_trees: List[str] = [
+    """{
+    "WideTree": "WideNode",
+    "children": [
+        {
+            "WideTree": "WideLeaf",
+            "value": "abc"
+        },
+        {
+            "WideTree": "WideNode",
+            "children": [
+                {
+                    "WideTree": "WideLeaf",
+                    "value": "def"
+                },
+                {
+                    "WideTree": "WideLeaf",
+                    "value": "ghi"
+                }
+            ]
+        },
+        {
+            "WideTree": "WideLeaf",
+            "value": "jkl"
+        }
+    ]
 }"""
 ]
 

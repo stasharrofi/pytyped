@@ -14,10 +14,9 @@ from pytyped.json.decoder import JsDecodeErrorFinal
 from pytyped.json.decoder import JsonDecoder
 from pytyped.json.decoder import JsonErrorAsDefaultDecoder
 from pytyped.json.decoder import JsonMappedDecoder
-from pytyped.json.decoder import JsonTaggedDecoder
 from tests.json import common
 from tests.json.common import C1, G, G2, IntBinaryTree, auto_json_decoder, valid_binary_int_tree_jsons, valid_int_trees, \
-    Tree
+    valid_wide_trees, Tree, WideTree
 
 default_a = common.A(d=None, dt=None, e=None, x=100, y=False, t=("t_str2", 20), z="default")
 a_with_default_decoder = JsonErrorAsDefaultDecoder(common.a_decoder, default_a)
@@ -383,3 +382,11 @@ def test_binary_tree_int(json_str: str) -> None:
     assert tree_instance.right.value == 2
     assert tree_instance.right.left.value == 3
     assert tree_instance.right.right.value == 4
+
+
+@pytest.mark.parametrize("json_str", valid_wide_trees)
+def test_wide_tree_str(json_str: str) -> None:
+    json_obj = json.loads(json_str)
+    decoder = auto_json_decoder.extract(WideTree[str])
+    tree_instance = decoder.read(json_obj)
+    assert tree_instance.collect() == ["abc", ["def", "ghi"], "jkl"]
