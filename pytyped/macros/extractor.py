@@ -1,9 +1,9 @@
 from abc import ABCMeta
 from abc import abstractmethod
 from dataclasses import Field
-from dataclasses import MISSING
+from dataclasses import MISSING, dataclass, is_dataclass
 from enum import Enum
-from dataclasses import dataclass
+from inspect import isclass
 from typing import FrozenSet
 from typing import cast
 from typing import Any
@@ -19,6 +19,7 @@ from typing import TypeVar
 from typing import Union
 
 from pytyped.macros.boxed import Boxed
+from pytyped.macros.pyjack import replace_all_refs
 
 
 @dataclass
@@ -64,6 +65,12 @@ class UnnamedUnionDescriptor:
 class NamedUnionDescriptor:
     branches: Dict[str, type]  # Mapping of names to branches
 
+
+@dataclass
+class RecursiveTypeApplication:
+    ref_count: int
+    typ: type
+    assignments: FrozenSet[Tuple[str, type]]
 
 class Extractor(Generic[T], metaclass=ABCMeta):
     # Memoized values for types that have already been extracted.
@@ -155,9 +162,16 @@ class Extractor(Generic[T], metaclass=ABCMeta):
         :param t: Type that needs to be checked for being optional.
         :return: Returns Boxed(x) if t is Optional[x] and returns None otherwise.
         """
-        if not hasattr(t, "__subclasses__"):
+        if not (isclass(t) or (hasattr(t, "__origin__") and hasattr(t.__origin__, "__args__") and isclass(t.__origin__))):
             return None
-        branch_list = t.__subclasses__()
+
+        branch_list: List[type]
+        if hasattr(t, "__subclasses__"):
+            branch_list = t.__subclasses__()
+        elif hasattr(t, "__origin__") and hasattr(t.__origin__, "__subclasses__"):
+            branch_list = t.__origin__.__subclasses__()
+        else:
+            return None
         if len(branch_list) <= 0:
             return None
 
@@ -216,10 +230,14 @@ class Extractor(Generic[T], metaclass=ABCMeta):
            If `t` is a dataclass, returns a mapping from `t`'s field names to their types and default values.
            Otherwise, returns None.
         """
-        if not hasattr(t, "__dataclass_fields__"):
+        dataclass_fields: Dict[str, Field]
+        if is_dataclass(t):
+            dataclass_fields = cast(Dict[str, Field], t.__dataclass_fields__)  # type: ignore
+        elif hasattr(t, "__origin__") and hasattr(t.__origin__, "__args__") and is_dataclass(t.__origin__):
+            dataclass_fields = cast(Dict[str, Field], t.__origin__.__dataclass_fields__)  # type: ignore
+        else:
             return None
 
-        dataclass_fields = cast(Dict[str, Field], t.__dataclass_fields__)  # type: ignore
         fields: Dict[str, FieldType] = {}
         for (field_name, field_definition) in dataclass_fields.items():
             field_default: Union[None, Boxed[Any], Callable[[], Any]] = None
@@ -262,64 +280,58 @@ class Extractor(Generic[T], metaclass=ABCMeta):
         return None
 
     @staticmethod
-    def apply_assignments(t: type, old_context: Dict[str, type]) -> Dict[str, type]:
-        if not hasattr(t, "__origin__"):
-            return old_context
-        if not hasattr(t, "__args__"):
-            return old_context
-
-        origin: type = cast(type, t.__origin__)  # type: ignore
-        if not hasattr(origin, "__parameters__"):
-            return old_context
-        if origin.__parameters__ is None:  # type: ignore
-            return old_context
-
-        parameter_names: List[str] = []
-        for parameter in origin.__parameters__:  # type: ignore
-            parameter_names.append(parameter.__name__)
-
-        new_context: Dict[str, type] = old_context.copy()
-        for (parameter_name, arg) in zip(parameter_names, t.__args__):  # type: ignore
-            if isinstance(arg, TypeVar):  # type: ignore
-                arg_name: str = arg.__name__
-                if arg_name not in old_context:
-                    raise ExtractorAssignmentException(old_context, arg_name)
-                new_context[parameter_name] = old_context[arg_name]
-            else:
-                if not hasattr(arg, "__parameters__") or len(arg.__parameters__) <= 0:
-                    new_context[parameter_name] = arg
-                else:
-                    concretized_params_list: List[type] = []
-                    for p in arg.__parameters__:
-                        p_name = p.__name__
-                        p_type = old_context.get(p_name)
-                        if p_type is None:
-                            raise ExtractorAssignmentException(old_context, p_name)
-                        concretized_params_list.append(p_type)
-                    concretized_params_tuple = tuple(t for t in concretized_params_list)
-                    new_context[parameter_name] = arg[concretized_params_tuple]
-
-        return new_context
-
-    @staticmethod
     def or_else(t: Optional[T], f: Callable[[], Optional[T]]) -> Optional[T]:
         if t is None:
             return f()
         return t
 
-    def assignments(self, t: type) -> FrozenSet[Tuple[str, type]]:
-        if not hasattr(t, "__parameters__"):
-            return frozenset([])
+    def assignments(self, t: type) -> Tuple[type, FrozenSet[Tuple[str, type]], Dict[str, type]]:
+        new_context = self._context.copy()
+        if hasattr(t, "__origin__") and hasattr(t.__origin__, "__parameters__") and hasattr(t, "__args__"):
+            t_origin = t.__origin__
+            assert len(t.__args__) == len(t_origin.__parameters__)
+            for parameter, arg in zip(t_origin.__parameters__, t.__args__):  # type:ignore
+                parameter_name: str = cast(str, parameter.__name__)
+                if isinstance(arg, TypeVar):  # type: ignore
+                    arg_name: str = arg.__name__
+                    if arg_name not in self._context:
+                        raise ExtractorAssignmentException(self._context, arg_name)
+                    new_context[parameter_name] = self._context[arg_name]
+                else:
+                    if not hasattr(arg, "__parameters__") or len(arg.__parameters__) <= 0:
+                        new_context[parameter_name] = arg
+                    else:
+                        concretized_params_list: List[type] = []
+                        for p in arg.__parameters__:
+                            p_name = p.__name__
+                            p_type = self._context.get(p_name)
+                            if p_type is None:
+                                raise ExtractorAssignmentException(self._context, p_name)
+                            concretized_params_list.append(p_type)
+                        concretized_params_tuple = tuple(t for t in concretized_params_list)
+                        new_context[parameter_name] = arg[concretized_params_tuple]
+        elif not hasattr(t, "__origin__"):
+            t_origin = t
+        else:
+            return t, frozenset(), self._context
 
         assignments: Dict[str, type] = {}
-        for parameter in t.__parameters__:  # type:ignore
-            parameter_name: str = cast(str, parameter.__name__)
-            assignments[parameter_name] = self._var_to_type(parameter_name)
+        if hasattr(t_origin, "__parameters__"):
+            for parameter in t_origin.__parameters__:  # type:ignore
+                parameter_name: str = cast(str, parameter.__name__)
+                parameter_type = new_context.get(parameter_name)
+                if parameter_type is None:
+                    raise ExtractorAssignmentException(new_context, parameter_name)
+                assignments[parameter_name] = parameter_type
 
-        return frozenset(assignments.items())
+        if len(assignments) <= 0:
+            return t_origin, frozenset(), self._context
 
+        return t_origin, frozenset(assignments.items()), new_context
+ 
     def add_special(self, typ: type, value: T) -> None:
-        self.memoized[(typ, self.assignments(typ))] = Boxed(value)
+        t_origin, t_assignment, _ = self.assignments(typ)
+        self.memoized[(t_origin, t_assignment)] = Boxed(value)
 
     def _var_to_type(self, var_name: str) -> type:
         if var_name not in self._context:
@@ -420,27 +432,37 @@ class Extractor(Generic[T], metaclass=ABCMeta):
         if isinstance(t, TypeVar):  # type: ignore
             t = self._var_to_type(t.__name__)
 
-        result: Optional[Boxed[T]] = self.memoized.get((t, self.assignments(t)))
+        t_origin, t_assignments, new_context = self.assignments(t)
+        key = (t_origin, t_assignments)
+        if key in self.memoized:
+            result = self.memoized[key].t
+            if isinstance(result, RecursiveTypeApplication):
+                result.ref_count = result.ref_count + 1
+            return result
+
+        recursion_placeholder = RecursiveTypeApplication(0, t_origin, t_assignments)
+        self.memoized[key] = Boxed(recursion_placeholder)
 
         old_context = self._context
-        self._context = Extractor.apply_assignments(t, self._context)
+        self._context = new_context
 
-        result = Extractor.or_else(result, lambda: self._extract_basic_type(t))
-        result = Extractor.or_else(result, lambda: self._extract_unnamed_sum_type(t))
-        result = Extractor.or_else(result, lambda: self._extract_named_sum_type(t))
-        result = Extractor.or_else(result, lambda: self._extract_list_type(t))
-        result = Extractor.or_else(result, lambda: self._extract_dictionary_type(t))
-        result = Extractor.or_else(result, lambda: self._extract_unnamed_product_type(t))
-        result = Extractor.or_else(result, lambda: self._extract_named_product_type(t))
-        result = Extractor.or_else(result, lambda: self._extract_enum_type(t))
+        result: Optional[Boxed[T]] = None
+        result = Extractor.or_else(result, lambda: self._extract_basic_type(t_origin))
+        result = Extractor.or_else(result, lambda: self._extract_unnamed_sum_type(t_origin))
+        result = Extractor.or_else(result, lambda: self._extract_named_sum_type(t_origin))
+        result = Extractor.or_else(result, lambda: self._extract_list_type(t_origin))
+        result = Extractor.or_else(result, lambda: self._extract_dictionary_type(t_origin))
+        result = Extractor.or_else(result, lambda: self._extract_unnamed_product_type(t_origin))
+        result = Extractor.or_else(result, lambda: self._extract_named_product_type(t_origin))
+        result = Extractor.or_else(result, lambda: self._extract_enum_type(t_origin))
 
         if result is None:
-            raise UnknownExtractorException(t)
+            raise UnknownExtractorException(t_origin)
 
+        if recursion_placeholder.ref_count > 0:
+            replace_all_refs(recursion_placeholder, result.t)
         self._context = old_context
-        t_assignments = self.assignments(t)
-        if (t, t_assignments) not in self.memoized:
-            self.memoized[(t, t_assignments)] = result
+        self.memoized[key] = result
         return result.t
 
     def extract(self, in_typ: type) -> T:

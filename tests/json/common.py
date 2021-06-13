@@ -1,18 +1,11 @@
+from attr import s
 from dataclasses import dataclass
 from dataclasses import field
 from datetime import date
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
-from typing import Dict
-from typing import Generic
-from typing import List
-from typing import NamedTuple
-from typing import Optional
-from typing import Tuple
-from typing import TypeVar
-from typing import Union
-from typing import cast
+from typing import Any, Dict, Generic, List, NamedTuple, Optional, Tuple, TypeVar, Union, cast
 
 from pytyped.json.decoder import AutoJsonDecoder
 from pytyped.json.decoder import JsonBoxedDecoder
@@ -99,6 +92,61 @@ class Composite:
     int_list_g: G[List[int]]
 
 
+@dataclass
+class IntBinaryTree:
+    pass
+
+
+@dataclass
+class IntBinaryLeafNode(IntBinaryTree):
+    value: int
+
+
+@dataclass
+class IntBinaryInternalNode(IntBinaryTree):
+    value: int
+    left: IntBinaryTree
+    right: IntBinaryTree
+
+
+@dataclass
+class Tree(Generic[T]):
+    value: T
+
+
+@dataclass
+class Leaf(Tree[T], Generic[T]):
+    pass
+
+
+@dataclass
+class Node(Tree[T], Generic[T]):
+    left: Tree[T]
+    right: Tree[T]
+
+
+@dataclass
+class WideTree(Generic[T]):
+    def collect(self) -> Any:
+        raise NotImplementedError()
+
+
+@dataclass
+class WideNode(WideTree[T], Generic[T]):
+    children: List[WideTree[T]]
+
+    def collect(self) -> Any:
+        return [child.collect() for child in self.children]
+
+
+@dataclass
+class WideLeaf(WideTree[T], Generic[T]):
+    value: T
+
+    def collect(self) -> Any:
+        return self.value
+
+
 valid_a_jsons = [
     '{"x": 1, "y": false, "z": "xyz"}',
     '{"x": 1, "y": false, "t": ["abc", 8]}',
@@ -159,6 +207,81 @@ valid_composite_jsons: List[str] = [
     "int_g": {"non_generic_field": "abc", "generic_field": 17},
     "str_g": {"non_generic_field": "def", "generic_field": "some_string"},
     "int_list_g": {"non_generic_field": "ghi", "generic_field": [10, 11, 12]}
+}"""
+]
+
+valid_binary_int_tree_jsons: List[str] = [
+    """{
+    "IntBinaryTree": "IntBinaryInternalNode",
+    "value": 0,
+    "left": {
+        "IntBinaryTree": "IntBinaryLeafNode",
+        "value": 1
+    },
+    "right": {
+        "IntBinaryTree": "IntBinaryInternalNode",
+        "value": 2,
+        "left": {
+            "IntBinaryTree": "IntBinaryLeafNode",
+            "value": 3
+        },
+        "right": {
+            "IntBinaryTree": "IntBinaryLeafNode",
+            "value": 4
+        }
+    }
+}"""
+]
+
+valid_int_trees: List[str] = [
+    """{
+    "Tree": "Node",
+    "value": 0,
+    "left": {
+        "Tree": "Leaf",
+        "value": 1
+    },
+    "right": {
+        "Tree": "Node",
+        "value": 2,
+        "left": {
+            "Tree": "Leaf",
+            "value": 3
+        },
+        "right": {
+            "Tree": "Leaf",
+            "value": 4
+        }
+    }
+}"""
+]
+
+valid_wide_trees: List[str] = [
+    """{
+    "WideTree": "WideNode",
+    "children": [
+        {
+            "WideTree": "WideLeaf",
+            "value": "abc"
+        },
+        {
+            "WideTree": "WideNode",
+            "children": [
+                {
+                    "WideTree": "WideLeaf",
+                    "value": "def"
+                },
+                {
+                    "WideTree": "WideLeaf",
+                    "value": "ghi"
+                }
+            ]
+        },
+        {
+            "WideTree": "WideLeaf",
+            "value": "jkl"
+        }
+    ]
 }"""
 ]
 
