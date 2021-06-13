@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="pytyped",
-    version="0.0.5",
+    version="0.1.0",
     author="Shahab Tasharrofi",
     author_email="shahab.tasharrofi@gmail.com",
     description="Type-Driven Development for Python",

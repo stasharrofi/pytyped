@@ -14,6 +14,28 @@ pip install pytyped
 
 `pytyped` is checked on `Python 3.6+`.
 
+### Why `pytyped`?
+
+To our knowledge, `pytyped` is the only Python package that supports type-based automation for all typing constructs
+including even recursive types that, up to this day, is not even fully supported by Python itself yet. Additionally,
+`pytyped` is designed to be extensible. That is, despite the fact that JSON encoding/decoding provided by `pytyped`
+is a very nice feature, it's only one the use cases of `pytyped`. In the past, we have successfully used `pytyped` in
+different scenarios such as automating report generation based on data types as well as automating DynamoDB interactions
+based on the type of the data that is being stored/retrieved.
+
+In order to see how you can automate your own workflow on top of `pytyped`, see how JSON decoding/encoding and metric
+extractions use `pytyped.macros` to achieve type-driven meta-programming.
+
+Currently, `pytyped` supports the following type classes:
+- Basic types such as `int`, `bool`, `date`, `datetime`, `str`, and `Decimal`.
+- Simple usual combinators such as `List[T]` and `Dict[A, B]`.
+- Named product types such as `NamedTuple`s or `dataclass`es.
+- Anonymous product types such as `Tuple[T1, T2, ...]`.
+- Anonymous union types such as `Optional[T]`, `Union[T1, T2, ...]`, etc.
+- Named union types such as class hierarchies.
+- Generic types and type variables.
+- Recursive types.
+
 ### Using `pytyped` to extract JSON decoders/encoders
 
 First, define your type. For example, in the following we want to define an account that can either be a personal
