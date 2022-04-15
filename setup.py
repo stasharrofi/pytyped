@@ -7,7 +7,7 @@ package_list = setuptools.find_packages(exclude=["tests"])
 
 setuptools.setup(
     name="pytyped",
-    version="0.1.0",
+    version="0.1.1",
     author="Shahab Tasharrofi",
     author_email="shahab.tasharrofi@gmail.com",
     description="Type-Driven Development for Python",
@@ -19,7 +19,7 @@ setuptools.setup(
     package_data={package_name: ['py.typed'] for package_name in package_list},
     classifiers=[
         "Programming Language :: Python :: 3",
-        "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+        "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
     ],
     python_requires='>=3.6',
