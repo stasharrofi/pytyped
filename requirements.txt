@@ -1,5 +1,7 @@
+build
+dataclasses
 mypy
 pytest
 pytest-cov
 python-dateutil
-dataclasses
+twine

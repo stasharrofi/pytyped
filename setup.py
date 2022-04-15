@@ -3,7 +3,7 @@ import setuptools
 with open("README.md", "r") as fh:
     long_description = fh.read()
 
-package_list = setuptools.find_packages(exclude=["tests"])
+package_list = setuptools.find_packages(exclude=["tests", "scripts"])
 
 setuptools.setup(
     name="pytyped",
