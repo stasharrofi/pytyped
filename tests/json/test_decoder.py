@@ -16,7 +16,7 @@ from pytyped.json.decoder import JsonErrorAsDefaultDecoder
 from pytyped.json.decoder import JsonMappedDecoder
 from tests.json import common
 from tests.json.common import C1, G, G2, IntBinaryTree, auto_json_decoder, valid_binary_int_tree_jsons, valid_int_trees, \
-    valid_wide_trees, Tree, WideTree
+    valid_wide_trees, Tree, WideTree, User, user_decoder, multi_generic_container_decoder
 
 default_a = common.A(d=None, dt=None, e=None, x=100, y=False, t=("t_str2", 20), z="default")
 a_with_default_decoder = JsonErrorAsDefaultDecoder(common.a_decoder, default_a)
@@ -390,3 +390,61 @@ def test_wide_tree_str(json_str: str) -> None:
     decoder = auto_json_decoder.extract(WideTree[str])
     tree_instance = decoder.read(json_obj)
     assert tree_instance.collect() == ["abc", ["def", "ghi"], "jkl"]
+
+
+@pytest.mark.parametrize("json_str, user_id, user_pass", [
+    ('{"user_id": 1, "password": "abc"}', 1, "abc"),
+    ('{"user_id": 100, "password": "xyz"}', 100, "xyz"),
+    ('{"user_id": -5, "password": ""}', -5, ""),
+    ('{"user_id": 0, "password": "def"}', 0, "def"),
+])
+def test_functional_decoder_valid(json_str: str, user_id: int, user_pass: str) -> None:
+    json_obj = json.loads(json_str)
+    user = user_decoder.read(json_obj)
+    assert user.user_id.value == user_id
+    assert user.password.value == user_pass
+
+
+@pytest.mark.parametrize("json_str", [
+    '{"user_id": 1.2, "password": "abc"}',
+    '{"user_id": 1, "password": null}',
+    '{"user_id": null, "password": "abc"}',
+    '{"password": "def"}',
+    '{"user_id": {"value": 1}, "password": "abc"}',
+    '{"user_id": {"value": 1}, "password": {"value": "abc"}}',
+    '{"user_id": 1, "password": {"value": "abc"}}',
+])
+def test_functional_decoder_invalid(json_str: str) -> None:
+    json_obj = json.loads(json_str)
+    with pytest.raises(JsDecodeException):
+        user_decoder.read(json_obj)
+
+
+@pytest.mark.parametrize("json", [
+    {"int_str": [1, "abc"], "int_int": [1, 2], "str_str": ["abc", "def"]},
+    {"int_str": [1, ""], "int_int": [-1, 0], "str_str": ["", "def"]},
+])
+def test_functional_decoder_multiple_arguments_valid(json) -> None:
+    mgc_value = multi_generic_container_decoder.read(json)
+    assert isinstance(mgc_value.int_str.t, int)
+    assert isinstance(mgc_value.int_str.t2, str)
+    assert isinstance(mgc_value.int_int.t, int)
+    assert isinstance(mgc_value.int_int.t2, int)
+    assert isinstance(mgc_value.str_str.t, str)
+    assert isinstance(mgc_value.str_str.t2, str)
+
+
+@pytest.mark.parametrize("json", [
+    {"int_str": [1], "int_int": [1, 2], "str_str": ["abc", "def"]},
+    {"int_str": ["abc", "abc"], "int_int": [1, 2], "str_str": ["abc", "def"]},
+    {"int_str": [1, 1], "int_int": [1, 2], "str_str": ["abc", "def"]},
+    {"int_str": [1, "abc"], "int_int": [1], "str_str": ["abc", "def"]},
+    {"int_str": [1, "abc"], "int_int": [1, "abc"], "str_str": ["abc", "def"]},
+    {"int_str": [1, "abc"], "int_int": ["abc", 1], "str_str": ["abc", "def"]},
+    {"int_str": [1, "abc"], "int_int": [1, 2], "str_str": ["def"]},
+    {"int_str": [1, "abc"], "int_int": [1, 2], "str_str": [1, "def"]},
+    {"int_str": [1, "abc"], "int_int": [1, 2], "str_str": ["abc", 1]},
+])
+def test_functional_decoder_multiple_arguments_invalid(json) -> None:
+    with pytest.raises(JsDecodeException):
+        multi_generic_container_decoder.read(json)
