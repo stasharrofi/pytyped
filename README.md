@@ -19,7 +19,7 @@ pip install pytyped
 To our knowledge, `pytyped` is the only Python package that supports type-based automation for all typing constructs
 including even recursive types that, up to this day, is not even fully supported by Python itself yet. Additionally,
 `pytyped` is designed to be extensible. That is, despite the fact that JSON encoding/decoding provided by `pytyped`
-is a very nice feature, it's only one the use cases of `pytyped`. In the past, we have successfully used `pytyped` in
+is a very nice feature, it's only one of the use cases of `pytyped`. In the past, we have successfully used `pytyped` in
 different scenarios such as automating report generation based on data types as well as automating DynamoDB interactions
 based on the type of the data that is being stored/retrieved.
 
@@ -34,6 +34,7 @@ Currently, `pytyped` supports the following type classes:
 - Anonymous union types such as `Optional[T]`, `Union[T1, T2, ...]`, etc.
 - Named union types such as class hierarchies.
 - Generic types and type variables.
+- Custom functional types such as `Set[T]`, `Secret[T]`, etc.
 - Recursive types.
 
 ### Using `pytyped` to extract JSON decoders/encoders
