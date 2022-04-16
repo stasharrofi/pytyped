@@ -7,7 +7,7 @@ package_list = setuptools.find_packages(exclude=["tests", "scripts"])
 
 setuptools.setup(
     name="pytyped",
-    version="0.1.1",
+    version="0.2.0",
     author="Shahab Tasharrofi",
     author_email="shahab.tasharrofi@gmail.com",
     description="Type-Driven Development for Python",

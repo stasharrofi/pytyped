@@ -7,7 +7,7 @@ from decimal import Decimal
 from enum import Enum
 from typing import Any, Dict, Generic, List, NamedTuple, Optional, Tuple, TypeVar, Union, cast
 
-from pytyped.json.decoder import AutoJsonDecoder
+from pytyped.json.decoder import AutoJsonDecoder, JsonMappedDecoder, JsonTupleDecoder
 from pytyped.json.decoder import JsonBoxedDecoder
 from pytyped.json.decoder import JsonDecoder
 from pytyped.json.decoder import JsonTaggedDecoder
@@ -145,6 +145,33 @@ class WideLeaf(WideTree[T], Generic[T]):
 
     def collect(self) -> Any:
         return self.value
+
+
+@dataclass
+class Secret(Generic[T]):
+    value: T
+
+
+@dataclass
+class User:
+    user_id: Secret[int]
+    password: Secret[str]
+
+
+T2 = TypeVar("T2")
+
+
+@dataclass
+class MultiGeneric(Generic[T, T2]):
+    t: T
+    t2: T2
+
+
+@dataclass
+class MultiGenericContainer:
+    int_str: MultiGeneric[int, str]
+    int_int: MultiGeneric[int, int]
+    str_str: MultiGeneric[str, str]
 
 
 valid_a_jsons = [
@@ -308,3 +335,14 @@ c_untagged_decoder = cast(JsonDecoder[C], auto_json_decoder.extract(cast(type, U
 string_to_int_dic_json_decoder = auto_json_decoder.extract(Dict[str, int])
 
 composite_decoder = cast(JsonDecoder[Composite], auto_json_decoder.extract(Composite))
+
+auto_json_decoder.add_custom_functional_type(Secret, lambda inner_decoder: JsonMappedDecoder(inner_decoder, lambda v: Secret(v)))
+user_decoder = auto_json_decoder.extract(User)
+
+auto_json_decoder.add_custom_functional_type(MultiGeneric, lambda t_decoder, t2_decoder: JsonMappedDecoder(
+    u_decoder=JsonTupleDecoder([t_decoder, t2_decoder]),
+    u_to_t=lambda v: MultiGeneric(v[0], v[1])
+))
+multi_generic_container_decoder = auto_json_decoder.extract(MultiGenericContainer)
+
+

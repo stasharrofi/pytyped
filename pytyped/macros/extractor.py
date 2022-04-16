@@ -77,6 +77,7 @@ class Extractor(Generic[T], metaclass=ABCMeta):
     # Since types can be generic, their relative context are included.
     # So, the mapping for a generic type G[X] would be (G, {X --> A}) --> T[G[A]].
     memoized: Dict[Tuple[type, FrozenSet[Tuple[str, type]]], Boxed[T]]
+    custom_functional_types: Dict[type, Callable[[T, ...], T]]
 
     # Current context: A mapping from type variable names to their types.
     # Should only be non-empty when a type-extraction is in progress.
@@ -85,6 +86,7 @@ class Extractor(Generic[T], metaclass=ABCMeta):
 
     def __init__(self) -> None:
         self.memoized = {}
+        self.custom_functional_types = {}
         self._context = {}
 
     @property
@@ -105,12 +107,12 @@ class Extractor(Generic[T], metaclass=ABCMeta):
 
     @abstractmethod
     def named_sum_extractor(self, t: type, branches: Dict[str, Tuple[type, T]]) -> T:
-        # Given T[X], generates T[Optional[X]]
+        # Given mapping tag -> T[X(tag)], generates T[{tag --> X(tag)}]
         pass
 
     @abstractmethod
     def unnamed_sum_extractor(self, t: type, branches: List[Tuple[type, T]]) -> T:
-        # Given T[X], generates T[Optional[X]]
+        # Given T[X1] ... T[Xn], generates T[Union[X1, ..., Xn]]
         pass
 
     @abstractmethod
@@ -279,6 +281,22 @@ class Extractor(Generic[T], metaclass=ABCMeta):
             return Boxed((t.__args__[0], t.__args__[1]))  # type: ignore
         return None
 
+    def extract_if_custom_functional_type(self, t: type) -> Optional[Tuple[Callable[[T, ...], T], List[Union[str, Boxed[type]]]]]:
+        """
+        :param t: type that needs to be checked for being a custom functional type.
+        :return: Returns `Boxed((F_cons, ["X1", "X2", ..., "Xn"]))` if `F` is a custom functional type `F[X1, ..., Xn]`
+                 and X1 ... Xn are type variable names of type parameters of F and F_cons is a constructor
+                 for T[F[X1, ..., Xn]] given T[X1], ..., T[Xn].
+        """
+        custom_type_t_constructor = self.custom_functional_types.get(t)
+        if custom_type_t_constructor is None:
+            return None
+        if hasattr(t, "__parameters__"):
+            return custom_type_t_constructor, [param.__name__ for param in t.__parameters__]  # type: ignore
+        if hasattr(t, "__args__"):
+            return custom_type_t_constructor, list(t.__args__)  # type: ignore
+        return None
+
     @staticmethod
     def or_else(t: Optional[T], f: Callable[[], Optional[T]]) -> Optional[T]:
         if t is None:
@@ -332,6 +350,9 @@ class Extractor(Generic[T], metaclass=ABCMeta):
     def add_special(self, typ: type, value: T) -> None:
         t_origin, t_assignment, _ = self.assignments(typ)
         self.memoized[(t_origin, t_assignment)] = Boxed(value)
+
+    def add_custom_functional_type(self, typ: type, value: Callable[[T, ...], T]) -> None:
+        self.custom_functional_types[typ] = value
 
     def _var_to_type(self, var_name: str) -> type:
         if var_name not in self._context:
@@ -417,6 +438,21 @@ class Extractor(Generic[T], metaclass=ABCMeta):
         value_extractor = self._make(value_type)
         return Boxed(self.dictionary_extractor(key_type, value_type, key_extractor, value_extractor))
 
+    def _extract_custom_functional_type(self, custom_functional_type: type) -> Optional[Boxed[T]]:
+        maybe_extractor = self.extract_if_custom_functional_type(custom_functional_type)
+        if maybe_extractor is None:
+            return None
+
+        extractor, var_or_types = maybe_extractor
+        inner_types: List[type] = []
+        for var_or_type in var_or_types:
+            if isinstance(var_or_type, str):
+                inner_types.append(self._var_to_type(var_or_type))
+            else:
+                inner_types.append(var_or_type.t)
+
+        return Boxed(extractor(*[self._make(inner_type) for inner_type in inner_types]))
+
     def _extract_enum_type(self, enum_type: type) -> Optional[Boxed[T]]:
         try:
             if not issubclass(enum_type, Enum):
@@ -452,6 +488,7 @@ class Extractor(Generic[T], metaclass=ABCMeta):
         result = Extractor.or_else(result, lambda: self._extract_named_sum_type(t_origin))
         result = Extractor.or_else(result, lambda: self._extract_list_type(t_origin))
         result = Extractor.or_else(result, lambda: self._extract_dictionary_type(t_origin))
+        result = Extractor.or_else(result, lambda: self._extract_custom_functional_type(t_origin))
         result = Extractor.or_else(result, lambda: self._extract_unnamed_product_type(t_origin))
         result = Extractor.or_else(result, lambda: self._extract_named_product_type(t_origin))
         result = Extractor.or_else(result, lambda: self._extract_enum_type(t_origin))
