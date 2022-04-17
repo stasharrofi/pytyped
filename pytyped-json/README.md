@@ -1,47 +1,40 @@
-# pytyped
+# pytyped-json
 
-`pytyped` is a Python package whose goal is to enable as much type-driven development as possible in Python.
-We believe in using types to automate mundane and repetitive tasks.
-Currently, given a type, JSON decoders/encoders and metric extractors can be automatically extracted for that type.
+`pytyped-json` is a Python package that enables automatic extraction of JSON decoders/encoders for given Python types.
+`pytyped-json` is a piece of the `pytyped` collection of packages and follows its philosophy of using types to automate mundane and repetitive tasks.
 
 ### Installation
 
-You can install `pytyped` from [PyPI](https://pypi.org/):
+You can install `pytyped-json` from [PyPI](https://pypi.org/):
 
 ```
-pip install pytyped
+pip install pytyped-json
 ```
 
-`pytyped` is checked on `Python 3.6+`.
+`pytyped-json` is checked on `Python 3.6+`.
 
-### Why `pytyped`?
+### Why `pytyped-json`?
 
-To our knowledge, `pytyped` is the only Python package that supports type-based automation for all typing constructs
-including even recursive types that, up to this day, is not even fully supported by Python itself yet. Additionally,
-`pytyped` is designed to be extensible. That is, despite the fact that JSON encoding/decoding provided by `pytyped`
-is a very nice feature, it's only one of the use cases of `pytyped`. In the past, we have successfully used `pytyped` in
-different scenarios such as automating report generation based on data types as well as automating DynamoDB interactions
-based on the type of the data that is being stored/retrieved.
+Based on the foundation of `pytyped-macros`, to our knowledge, `pytyped-json` is the only Python package that supports type-based JSON encoder/decoder extraction for **all typing combinators** including even recursive types that, up to this day, are not even fully supported by Python itself.
+Additionally, `pytyped-json` is designed to be extensible.
+That is, you can add your own specialized JSON decoders/encoders for either a simple type or even a generic type.
 
-In order to see how you can automate your own workflow on top of `pytyped`, see how JSON decoding/encoding and metric
-extractions use `pytyped.macros` to achieve type-driven meta-programming.
+Currently, `pytyped-json` supports the following type driven JSON encoder/decoder extractions:
+- JSON encoders/decoders for **basic types** such as `int`, `bool`, `date`, `datetime`, `str`, and `Decimal`.
+- JSON encoders/decoders for **simple type combinators** such as `List[T]` and `Dict[A, B]`.
+- JSON encoders/decoders for **named product types** such as `NamedTuple`s or `dataclass`es.
+- JSON encoders/decoders for **anonymous product types** such as `Tuple[T1, T2, ...]`.
+- JSON encoders/decoders for **anonymous union types** such as `Optional[T]`, `Union[T1, T2, ...]`, etc.
+- JSON encoders/decoders for **named union types** such as class hierarchies (i.e., when a class `A` has several subclasses `A1`, ..., `An`).
+- JSON encoders/decoders for **generic types** and type variables.
+- JSON encoders/decoders for **custom functional types** such as `Set[T]`, `Secret[T]`, etc where a custom function is defined for generic types such as `Set` or `Secret` and that functional is applied to all instantiations of those generic type.
+- JSON encoders/decoders for **recursive types** such as binary trees, etc.
 
-Currently, `pytyped` supports the following type classes:
-- Basic types such as `int`, `bool`, `date`, `datetime`, `str`, and `Decimal`.
-- Simple usual combinators such as `List[T]` and `Dict[A, B]`.
-- Named product types such as `NamedTuple`s or `dataclass`es.
-- Anonymous product types such as `Tuple[T1, T2, ...]`.
-- Anonymous union types such as `Optional[T]`, `Union[T1, T2, ...]`, etc.
-- Named union types such as class hierarchies.
-- Generic types and type variables.
-- Custom functional types such as `Set[T]`, `Secret[T]`, etc.
-- Recursive types.
+### Using `pytyped-json` to extract JSON decoders/encoders
 
-### Using `pytyped` to extract JSON decoders/encoders
-
-First, define your type. For example, in the following we want to define an account that can either be a personal
-account or a business account with personal account having one owner and possibly a co-owner while a business account
-has the company name as the owner and a list of persons that can represent the company.
+First, define your type.
+For example, the following defines an account superclass that can either be a personal account or a business account.
+Here, we define a personal account to have one owner and possibly a co-owner while a business account is defined by the company name as the owner and a list of persons that can represent the company.
 
 ```python
 from dataclasses import dataclass
@@ -140,17 +133,6 @@ Traceback (most recent call last):
 pytyped.json.decoder.JsDecodeException: Found 1 errors while validating JSON: [
   Error when decoding JSON: /representatives[1]/last_name: Non-optional field was not found]
 ```
-
-### Using pytyped to extract metrics
-
-Similar to extracting JSON decoders/encoders except that `pytyped.metrics.exporter.AutoMetricExporter` is used.
-Further explanation is WIP.
-
-### Defining New Type Automations
-
-You can follow the examples of JSON decoders, JSON encoders, and metric exporters to define new type-based automations.
-You just need to extend `pytyped.macros.extractor.Extractor` and implement the abstrtact methods there.
-Further explanation is WIP.
 
 ### Issues
 

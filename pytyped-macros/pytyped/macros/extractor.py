@@ -72,6 +72,7 @@ class RecursiveTypeApplication:
     typ: type
     assignments: FrozenSet[Tuple[str, type]]
 
+
 class Extractor(Generic[T], metaclass=ABCMeta):
     # Memoized values for types that have already been extracted.
     # Since types can be generic, their relative context are included.
