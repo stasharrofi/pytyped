@@ -545,6 +545,17 @@ class JsonNoneDecoder(JsonDecoder[None]):
         return Boxed(None)
 
 
+@dataclass
+class JsonAnyDecoder(JsonDecoder[Any]):
+    """
+    UNSAFE: Avoid using this class as much as possible.
+    Returns the raw json for cases where the structure of Json is not known in advance.
+    Does not do any validation and, so, errors are possible if the input is not valid JSON.
+    """
+    def decode(self, json: JsValue, ancestors: List[JsValue]) -> TOrError[Any]:
+        return Boxed(json)
+
+
 class AutoJsonDecoder(Extractor[JsonDecoder[Any]]):
     json_boolean_decoder = JsonBooleanDecoder()
     json_integer_decoder = JsonIntegerDecoder()
@@ -561,8 +572,13 @@ class AutoJsonDecoder(Extractor[JsonDecoder[Any]]):
         type(None): Boxed(cast(JsonDecoder[Any], JsonNoneDecoder))
     }
 
-    def __init__(self) -> None:
+    def __init__(
+            self,
+            enable_any: bool = False
+    ) -> None:
         super().__init__()
+        if enable_any:
+            self.add_special(Any, JsonAnyDecoder())
 
     @property
     def basics(self) -> Dict[type, Boxed[JsonDecoder[Any]]]:
@@ -630,3 +646,13 @@ class AutoJsonDecoder(Extractor[JsonDecoder[Any]]):
 
     def enum_extractor(self, enum_name: str, enum_values: List[Tuple[str, Any]]) -> JsonDecoder[Any]:
         return JsonEnumDecoder(enum_name, {n: v for (n, v) in enum_values})
+
+
+@dataclass
+class AutoJsonDecodingConfig:
+    enable_any: bool = False
+
+    def build(self) -> AutoJsonDecoder:
+        return AutoJsonDecoder(
+            enable_any=self.enable_any
+        )

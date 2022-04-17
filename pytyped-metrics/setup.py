@@ -7,14 +7,14 @@ package_list = setuptools.find_namespace_packages(include=["pytyped.*"])
 
 setuptools.setup(
     name="pytyped-metrics",
-    version="1.0.0",
+    version="1.0.1",
     author="Shahab Tasharrofi",
     author_email="shahab.tasharrofi@gmail.com",
     description="Type-Driven Development for Python: Automatic Extraction of Metrics for Python Types",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/stasharrofi/pytyped/pytyped-metrics",
-    install_requires=["pytyped-macros>=1.0.0"],
+    url="https://github.com/stasharrofi/pytyped/tree/master/pytyped-metrics",
+    install_requires=["pytyped-macros>=1.0.1"],
     packages=package_list,
     package_data={package_name: ['py.typed'] for package_name in package_list},
     classifiers=[
