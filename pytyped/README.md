@@ -4,7 +4,7 @@
 We believe in using types to automate mundane and repetitive tasks.
 Currently, `pytyped` includes:
 - [pytyped-json](https://pypi.org/project/pytyped-json/) for automatic extraction of JSON decoders/encoders given a Python type.
-- [pytyped-macros](https://pypi.org/project/pytyped-metrics/) for a generalized automatic extraction engine given a Python type.
+- [pytyped-macros](https://pypi.org/project/pytyped-macros/) for a generalized automatic extraction engine given a Python type.
 - [pytyped-metrics](https://pypi.org/project/pytyped-metrics/) for automatic extraction of metric exporters given a Python type.
 
 ### Installation
