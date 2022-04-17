@@ -3,7 +3,7 @@
 `pytyped-macros` is a core piece of `pytyped` Python packages that allows analysis of a given Python type and its breakdown into primitive type combinators.
 In this way, `pytyped-macros` facilitate `pytyped`'s main goal of type-driven development in Python.
 `pytyped-macros` is designed to be an extensible base class upon which other type derivations are implemented. 
-In order to see examples of how `pytyped-macros` can be used, look at `pytyped-json`, `pytyped-metrics`, and `pytyped-hocon`.
+In order to see examples of how `pytyped-macros` can be used, look at `pytyped-json`, and `pytyped-metrics`.
 
 ### Installation
 

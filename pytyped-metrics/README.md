@@ -115,59 +115,54 @@ business_account = BusinessAccount(
 Finally, use `account_metric_exporter` to convert data in your instances to a list of metrics:
 
 ```python
->>> account_metrics_exporter.export(personal_account).to_metrics({})
+>>> account_metric_exporter.export(["account"], personal_account).to_metrics({})
 [
     Metric(
-        name="products.balance",
-        value=Decimal(1000),
+        name='account.products.balance',
+        value=Decimal('1000'),
         tags={
-            "Account": "PersonalAccount",
-            "owner": "John Doe",
-            "currency": "USD",
-            "products.type": "Checking"
+            'account.Account': 'PersonalAccount',
+            'account.owner': 'John Doe',
+            'account.currency': 'USD'
         }
     ),
     Metric(
-        name="products.balance",
-        value=Decimal(200),
+        name='account.products.balance',
+        value=Decimal('200'),
         tags={
-            "Account": "PersonalAccount",
-            "owner": "John Doe",
-            "currency": "USD",
-            "products.type": "Credit"
+            'account.Account': 'PersonalAccount',
+            'account.owner': 'John Doe',
+            'account.currency': 'USD'
         }
     )
 ]
->>> account_metrics_exporter.export(business_account).to_metrics({})
+>>> account_metric_exporter.export(["account"], business_account).to_metrics({})
 [
     Metric(
-        name="currencies.balance",
-        value=Decimal(100000),
+        name='account.balance',
+        value=Decimal('100000'),
         tags={
-            "Account": "BusinessAccount",
-            "owner": "Doe Ltd.",
-            "currencies": "USD",
-            "currencies.type": "Checking"
+            'account.Account': 'BusinessAccount',
+            'account.owner': 'Doe Ltd.',
+            'account.currencies': 'USD'
         }
     ),
     Metric(
-        name="currencies.balance",
-        value=Decimal(20000),
+        name='account.balance',
+        value=Decimal('20000'),
         tags={
-            "Account": "BusinessAccount",
-            "owner": "Doe Ltd.",
-            "currencies": "USD",
-            "currencies.type": "Line of Credit"
+            'account.Account': 'BusinessAccount',
+            'account.owner': 'Doe Ltd.',
+            'account.currencies': 'USD'
         }
     ),
     Metric(
-        name="currencies.balance",
-        value=Decimal(50000),
+        name='account.balance',
+        value=Decimal('50000'),
         tags={
-            "Account": "BusinessAccount",
-            "owner": "Doe Ltd.",
-            "currencies": "EUR",
-            "currencies.type": "Checking"
+            'account.Account': 'BusinessAccount',
+            'account.owner': 'Doe Ltd.',
+            'account.currencies': 'EUR'
         }
     )
 ]
