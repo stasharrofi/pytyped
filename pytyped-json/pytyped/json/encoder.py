@@ -182,6 +182,16 @@ class JsonNoneEncoder(JsonEncoder[None]):
         return {}
 
 
+class JsonAnyEncoder(JsonEncoder[Any]):
+    """
+    UNSAFE: Avoid using this class as much as possible.
+    Includes raw json for cases where the structure of Json is not known in advance.
+    Does not do any validation and, so, errors are possible if the input is not valid JSON.
+    """
+    def encode(self, t: Any) -> JsValue:
+        return cast(JsValue, t)
+
+
 class AutoJsonEncoder(Extractor[JsonEncoder[Any]]):
     json_basic_encoder: JsonBasicEncoder = JsonBasicEncoder()
     json_decimal_encoder: JsonDecimalEncoder = JsonDecimalEncoder()
@@ -199,8 +209,13 @@ class AutoJsonEncoder(Extractor[JsonEncoder[Any]]):
         type(None): Boxed(JsonNoneEncoder())
     }
 
-    def __init__(self) -> None:
+    def __init__(
+            self,
+            enable_any: bool = False
+    ) -> None:
         super().__init__()
+        if enable_any:
+            self.add_special(Any, JsonAnyEncoder())
 
     @property
     def basics(self) -> Dict[type, Boxed[JsonEncoder[Any]]]:
@@ -250,3 +265,12 @@ class AutoJsonEncoder(Extractor[JsonEncoder[Any]]):
     def enum_extractor(self, enum_name: str, enum_values: List[Tuple[str, Any]]) -> JsonEncoder[Any]:
         return self.json_enum_encoder
 
+
+@dataclass
+class AutoJsonEncodingConfig:
+    enable_any: bool = False
+
+    def build(self) -> AutoJsonEncoder:
+        return AutoJsonEncoder(
+            enable_any=self.enable_any
+        )
