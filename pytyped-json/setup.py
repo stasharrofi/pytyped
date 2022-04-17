@@ -3,18 +3,18 @@ import setuptools
 with open("README.md", "r") as fh:
     long_description = fh.read()
 
-package_list = setuptools.find_packages(exclude=["tests", "scripts"])
+package_list = setuptools.find_namespace_packages(include=["pytyped.*"])
 
 setuptools.setup(
-    name="pytyped",
-    version="0.2.0",
+    name="pytyped-json",
+    version="1.0.0",
     author="Shahab Tasharrofi",
     author_email="shahab.tasharrofi@gmail.com",
-    description="Type-Driven Development for Python",
+    description="Type-Driven Development for Python: Automatic Extraction of JSON Decoders/Encoders for Python Types",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/stasharrofi/pytyped",
-    install_requires=["python-dateutil>=2.8.1"],
+    url="https://github.com/stasharrofi/pytyped/pytyped-json",
+    install_requires=["python-dateutil>=2.8.1", "pytyped-macros>=1.0.0"],
     packages=package_list,
     package_data={package_name: ['py.typed'] for package_name in package_list},
     classifiers=[
