@@ -80,11 +80,11 @@ class JsonDecoder(Generic[T], metaclass=ABCMeta):
     is_optional: bool = False
 
     @abstractmethod
-    def decode(self, json: JsValue, ancestors: List[JsValue]) -> TOrError[T]:
+    def decode(self, json: JsValue) -> TOrError[T]:
         pass
 
     def read(self, json: JsValue) -> T:
-        t_or_error = self.decode(json, [])
+        t_or_error = self.decode(json)
         if isinstance(t_or_error, Boxed):
             return t_or_error.t
         else:
@@ -100,7 +100,7 @@ class JsonObjectDecoder(JsonDecoder[T]):
     def get_constructor(self) -> Callable[[Dict[str, Any]], T]:
         return self.constructor  # type: ignore
 
-    def decode(self, json: JsValue, ancestors: List[JsValue]) -> TOrError[T]:
+    def decode(self, json: JsValue) -> TOrError[T]:
         if not isinstance(json, dict):
             return [
                 JsDecodeErrorFinal(
@@ -128,16 +128,11 @@ class JsonObjectDecoder(JsonDecoder[T]):
             else:
                 # The field_name is a key and its associated value is not None. So, it should be decoded.
                 field_json = cast(JsValue, json[field_name])
-                decoded_field = field_decoder.decode(
-                    field_json, [cast(JsValue, json)] + ancestors
-                )
+                decoded_field = field_decoder.decode(field_json)
                 if isinstance(decoded_field, Boxed):
                     decoded_fields[field_name] = decoded_field.t
                 else:
-                    for err in decoded_field:
-                        decoding_errors.append(
-                            JsDecodeErrorInField(field_name, err)
-                        )
+                    decoding_errors.extend(JsDecodeErrorInField(field_name, err) for err in decoded_field)
 
         if len(decoding_errors) > 0:
             return decoding_errors
@@ -149,7 +144,7 @@ class JsonObjectDecoder(JsonDecoder[T]):
 class JsonTupleDecoder(JsonDecoder[Tuple[Any, ...]]):
     field_decoders: List[JsonDecoder[Any]]
 
-    def decode(self, json: JsValue, ancestors: List[JsValue]) -> TOrError[Tuple[Any, ...]]:
+    def decode(self, json: JsValue) -> TOrError[Tuple[Any, ...]]:
         if not isinstance(json, list):
             return [
                 JsDecodeErrorFinal(
@@ -168,14 +163,11 @@ class JsonTupleDecoder(JsonDecoder[Tuple[Any, ...]]):
         for index, field_decoder in enumerate(self.field_decoders):
             # The field_name is a key and its associated value is not None. So, it should be decoded.
             field_json = cast(JsValue, json[index])
-            decoded_field = field_decoder.decode(field_json, [cast(JsValue, json)] + ancestors)
+            decoded_field = field_decoder.decode(field_json)
             if isinstance(decoded_field, Boxed):
                 decoded_fields.append(decoded_field.t)
             else:
-                for err in decoded_field:
-                    decoding_errors.append(
-                        JsDecodeErrorInArray(index, err)
-                    )
+                decoding_errors.extend(JsDecodeErrorInArray(index, err) for err in decoded_field)
 
         if len(decoding_errors) > 0:
             return decoding_errors
@@ -189,7 +181,7 @@ class JsonTaggedDecoder(JsonDecoder[Any]):
     tag_field_name: str = "tag"
     value_field_name: Optional[str] = None  # None means the value is in the same object file
 
-    def decode(self, json: JsValue, ancestors: List[JsValue]) -> TOrError[T]:
+    def decode(self, json: JsValue) -> TOrError[T]:
         if not isinstance(json, dict):
             return [JsDecodeErrorFinal("Expected a JSON object but received something else.")]
 
@@ -225,27 +217,20 @@ class JsonTaggedDecoder(JsonDecoder[Any]):
             ]
 
         if self.value_field_name is None:
-            return decoder.decode(json, ancestors)
+            return decoder.decode(json)
 
         value_field = cast(JsValue, json.get(self.value_field_name))
-        return decoder.decode(value_field, [value_field] + ancestors)
+        return decoder.decode(value_field)
 
 
 @dataclass
 class JsonOptionalDecoder(JsonDecoder[Optional[T]]):
     inner_decoder: JsonDecoder[T]
 
-    def decode(
-        self, json: JsValue, ancestors: List[JsValue]
-    ) -> TOrError[Optional[T]]:
+    def decode(self, json: JsValue) -> TOrError[Optional[T]]:
         if json is None:
             return Boxed(None)
-
-        result = self.inner_decoder.decode(json, ancestors)
-        if isinstance(result, Boxed):
-            return Boxed(result.t)
-        else:
-            return result
+        return self.inner_decoder.decode(json)
 
 
 @dataclass
@@ -253,8 +238,8 @@ class JsonErrorAsDefaultDecoder(JsonDecoder[T]):
     inner_decoder: JsonDecoder[T]
     default: T
 
-    def decode(self, json: JsValue, ancestors: List[JsValue]) -> TOrError[T]:
-        result = self.inner_decoder.decode(json, ancestors)
+    def decode(self, json: JsValue) -> TOrError[T]:
+        result = self.inner_decoder.decode(json)
         if isinstance(result, Boxed):
             return result
         return Boxed(self.default)
@@ -265,14 +250,13 @@ class JsonPriorityDecoder(JsonDecoder[Any]):
     # Decoders in the order of priority. The head of the list has more priority.
     inner_decoders: List[JsonDecoder[Any]]
 
-    def decode(self, json: JsValue, ancestors: List[JsValue]) -> TOrError[Any]:
+    def decode(self, json: JsValue) -> TOrError[Any]:
         errors: List[JsDecodeError] = []
         for inner_decoder in self.inner_decoders:
-            result = inner_decoder.decode(json, ancestors)
+            result = inner_decoder.decode(json)
             if isinstance(result, Boxed):
                 return result
-            for e in result:
-                errors.append(e)
+            errors.extend(result)
 
         return errors
 
@@ -285,8 +269,8 @@ class JsonMappedDecoder(JsonDecoder[T], Generic[T, U]):
     u_decoder: JsonDecoder[U]
     u_to_t: Callable[[U], T]
 
-    def decode(self, json: JsValue, ancestors: List[JsValue]) -> TOrError[T]:
-        result = self.u_decoder.decode(json, ancestors)
+    def decode(self, json: JsValue) -> TOrError[T]:
+        result = self.u_decoder.decode(json)
         if isinstance(result, Boxed):
             transformer = cast(Callable[[U], T], self.u_to_t)
             return Boxed(transformer(result.t))
@@ -298,8 +282,8 @@ class JsonFlatMappedDecoder(JsonDecoder[T], Generic[T, U]):
     u_decoder: JsonDecoder[U]
     u_to_t: Callable[[U], TOrError[T]]
 
-    def decode(self, json: JsValue, ancestors: List[JsValue]) -> TOrError[T]:
-        result = self.u_decoder.decode(json, ancestors)
+    def decode(self, json: JsValue) -> TOrError[T]:
+        result = self.u_decoder.decode(json)
         if isinstance(result, Boxed):
             transformer = cast(Callable[[U], TOrError[T]], self.u_to_t)
             return transformer(result.t)
@@ -315,12 +299,10 @@ class JsonBoxedDecoder(JsonDecoder[T]):
     def get_constructor(self) -> Callable[[Dict[str, Any]], T]:
         return self.constructor  # type: ignore
 
-    def decode(self, json: JsValue, ancestors: List[JsValue]) -> TOrError[T]:
-        decoded_field = self.field_decoder.decode(json, ancestors)
+    def decode(self, json: JsValue) -> TOrError[T]:
+        decoded_field = self.field_decoder.decode(json)
         if isinstance(decoded_field, Boxed):
-            return Boxed(
-                self.get_constructor()({self.field_name: decoded_field.t})
-            )
+            return Boxed(self.get_constructor()({self.field_name: decoded_field.t}))
         else:
             return decoded_field
 
@@ -329,9 +311,7 @@ class JsonBoxedDecoder(JsonDecoder[T]):
 class JsonListDecoder(JsonDecoder[List[T]]):
     element_decoder: JsonDecoder[T]
 
-    def decode(
-        self, json: JsValue, ancestors: List[JsValue]
-    ) -> TOrError[List[T]]:
+    def decode(self, json: JsValue) -> TOrError[List[T]]:
         if not isinstance(json, list):
             return [
                 JsDecodeErrorFinal(
@@ -342,15 +322,11 @@ class JsonListDecoder(JsonDecoder[List[T]]):
         decoding_errors: List[JsDecodeError] = []
         for index, element_json in enumerate(json):
             element_json = cast(JsValue, element_json)
-            parent: JsValue = json
-            decoded_element = self.element_decoder.decode(
-                element_json, [parent] + ancestors
-            )
+            decoded_element = self.element_decoder.decode(element_json)
             if isinstance(decoded_element, Boxed):
                 decoded_elements.append(decoded_element.t)
             else:
-                for err in decoded_element:
-                    decoding_errors.append(JsDecodeErrorInArray(index, err))
+                decoding_errors.extend(JsDecodeErrorInArray(index, err) for err in decoded_element)
 
         if len(decoding_errors) > 0:
             return decoding_errors
@@ -362,9 +338,7 @@ class JsonListDecoder(JsonDecoder[List[T]]):
 class JsonStringDictionaryDecoder(JsonDecoder[Dict[str, T]]):
     element_decoder: JsonDecoder[T]
 
-    def decode(
-        self, json: JsValue, ancestors: List[JsValue]
-    ) -> TOrError[Dict[str, T]]:
+    def decode(self, json: JsValue) -> TOrError[Dict[str, T]]:
         if not isinstance(json, dict):
             return [
                 JsDecodeErrorFinal(
@@ -380,18 +354,14 @@ class JsonStringDictionaryDecoder(JsonDecoder[Dict[str, T]]):
                 )
             else:
                 value_json = cast(JsValue, value_json)
-                parent: JsValue = json
-                decoded_value = self.element_decoder.decode(
-                    value_json, [parent] + ancestors
-                )
+                decoded_value = self.element_decoder.decode(value_json)
                 if isinstance(decoded_value, Boxed):
                     if key not in decoded_elements:
                         decoded_elements[key] = decoded_value.t
                     else:
                         decoding_errors.append(JsDecodeErrorFinal("Found key %s more than once." % key))
                 else:
-                    for err in decoded_value:
-                        decoding_errors.append(JsDecodeErrorInField(key, err))
+                    decoding_errors.extend(JsDecodeErrorInField(key, err) for err in decoded_value)
 
         if len(decoding_errors) > 0:
             return decoding_errors
@@ -401,7 +371,7 @@ class JsonStringDictionaryDecoder(JsonDecoder[Dict[str, T]]):
 
 @dataclass
 class JsonStringDecoder(JsonDecoder[str]):
-    def decode(self, json: JsValue, ancestors: List[JsValue]) -> TOrError[str]:
+    def decode(self, json: JsValue) -> TOrError[str]:
         if not isinstance(json, str):
             return [
                 JsDecodeErrorFinal(
@@ -413,16 +383,10 @@ class JsonStringDecoder(JsonDecoder[str]):
 
 @dataclass
 class JsonNumberDecoder(JsonDecoder[Decimal]):
-    def decode(
-        self, json: JsValue, ancestors: List[JsValue]
-    ) -> TOrError[Decimal]:
+    def decode(self, json: JsValue) -> TOrError[Decimal]:
         if isinstance(json, Decimal):
             return Boxed(json)
-        elif (
-            isinstance(json, float)
-            or isinstance(json, int)
-            or isinstance(json, str)
-        ):
+        elif isinstance(json, (float, int, str)):
             try:
                 return Boxed(Decimal(json))
             except DecimalException:
@@ -438,9 +402,7 @@ class JsonNumberDecoder(JsonDecoder[Decimal]):
 
 @dataclass
 class JsonBooleanDecoder(JsonDecoder[bool]):
-    def decode(
-        self, json: JsValue, ancestors: List[JsValue]
-    ) -> TOrError[bool]:
+    def decode(self, json: JsValue) -> TOrError[bool]:
         if not isinstance(json, bool):
             return [
                 JsDecodeErrorFinal(
@@ -456,8 +418,8 @@ json_number_decoder = JsonNumberDecoder()
 
 @dataclass
 class JsonIntegerDecoder(JsonDecoder[int]):
-    def decode(self, json: JsValue, ancestors: List[JsValue]) -> TOrError[int]:
-        decimal_or_error = json_number_decoder.decode(json, ancestors)
+    def decode(self, json: JsValue) -> TOrError[int]:
+        decimal_or_error = json_number_decoder.decode(json)
         if isinstance(decimal_or_error, Boxed):
             d = decimal_or_error.t
             if int(d) == d:
@@ -474,10 +436,8 @@ class JsonIntegerDecoder(JsonDecoder[int]):
 
 @dataclass
 class JsonDateDecoder(JsonDecoder[date]):
-    def decode(
-        self, json: JsValue, ancestors: List[JsValue]
-    ) -> TOrError[date]:
-        string_or_error = json_string_decoder.decode(json, ancestors)
+    def decode(self, json: JsValue) -> TOrError[date]:
+        string_or_error = json_string_decoder.decode(json)
         if isinstance(string_or_error, Boxed):
             s = string_or_error.t
             try:
@@ -495,10 +455,8 @@ class JsonDateDecoder(JsonDecoder[date]):
 
 @dataclass
 class JsonDatetimeDecoder(JsonDecoder[datetime]):
-    def decode(
-        self, json: JsValue, ancestors: List[JsValue]
-    ) -> TOrError[datetime]:
-        string_or_error = json_string_decoder.decode(json, ancestors)
+    def decode(self, json: JsValue) -> TOrError[datetime]:
+        string_or_error = json_string_decoder.decode(json)
         if isinstance(string_or_error, Boxed):
             s = string_or_error.t
             try:
@@ -519,8 +477,8 @@ class JsonEnumDecoder(JsonDecoder[T]):
     enum_name: str
     enum_values: Dict[str, T]
 
-    def decode(self, json: JsValue, ancestors: List[JsValue]) -> TOrError[T]:
-        string_or_error = json_string_decoder.decode(json, ancestors)
+    def decode(self, json: JsValue) -> TOrError[T]:
+        string_or_error = json_string_decoder.decode(json)
         if isinstance(string_or_error, Boxed):
             s = string_or_error.t
             enum_value = self.enum_values.get(s)
@@ -539,9 +497,7 @@ class JsonEnumDecoder(JsonDecoder[T]):
 
 @dataclass
 class JsonNoneDecoder(JsonDecoder[None]):
-    def decode(
-        self, json: JsValue, ancestors: List[JsValue]
-    ) -> TOrError[None]:
+    def decode(self, json: JsValue) -> TOrError[None]:
         return Boxed(None)
 
 
@@ -552,7 +508,7 @@ class JsonAnyDecoder(JsonDecoder[Any]):
     Returns the raw json for cases where the structure of Json is not known in advance.
     Does not do any validation and, so, errors are possible if the input is not valid JSON.
     """
-    def decode(self, json: JsValue, ancestors: List[JsValue]) -> TOrError[Any]:
+    def decode(self, json: JsValue) -> TOrError[Any]:
         return Boxed(json)
 
 
@@ -627,12 +583,11 @@ class AutoJsonDecoder(Extractor[JsonDecoder[Any]]):
             result: Dict[Any, Any] = {}
             errors: List[JsDecodeError] = []
             for k, v in d.items():
-                try:
-                    e = cast(Enum, key_ext.read(k))
-                    result[e] = v
-                except JsDecodeException as exception:
-                    for err in exception.errors:
-                        errors.append(err)
+                e_or_error = cast(TOrError[Enum], key_ext.decode(k))
+                if isinstance(e_or_error, Boxed):
+                    result[e_or_error.t] = v
+                else:
+                    errors.extend(e_or_error)
 
             if len(errors) > 0:
                 return errors
