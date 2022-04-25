@@ -7,7 +7,7 @@ package_list = setuptools.find_namespace_packages(include=["pytyped.*"])
 
 setuptools.setup(
     name="pytyped-json",
-    version="1.1.0",
+    version="1.2.0",
     author="Shahab Tasharrofi",
     author_email="shahab.tasharrofi@gmail.com",
     description="Type-Driven Development for Python: Automatic Extraction of JSON Decoders/Encoders for Python Types",
