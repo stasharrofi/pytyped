@@ -7,7 +7,7 @@ package_list = setuptools.find_namespace_packages(include=["pytyped.*"])
 
 setuptools.setup(
     name="pytyped-hocon",
-    version="0.1.0",
+    version="0.2.0",
     author="Shahab Tasharrofi",
     author_email="shahab.tasharrofi@gmail.com",
     description="Type-Driven Development for Python: Automatic Extraction of HOCON Parsers for Python Types",
