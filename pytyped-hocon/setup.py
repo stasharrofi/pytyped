@@ -3,18 +3,18 @@ import setuptools
 with open("README.md", "r") as fh:
     long_description = fh.read()
 
-package_list = []
+package_list = setuptools.find_namespace_packages(include=["pytyped.*"])
 
 setuptools.setup(
-    name="pytyped",
-    version="1.1.0",
+    name="pytyped-hocon",
+    version="0.1.0",
     author="Shahab Tasharrofi",
     author_email="shahab.tasharrofi@gmail.com",
-    description="Type-Driven Development for Python",
+    description="Type-Driven Development for Python: Automatic Extraction of HOCON Parsers for Python Types",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/stasharrofi/pytyped/tree/master/pytyped",
-    install_requires=["pytyped-json>=1.1.0", "pytyped-metrics>=1.0.1", "pytyped-hocon>=0.1.0"],
+    url="https://github.com/stasharrofi/pytyped/tree/master/pytyped-hocon",
+    install_requires=["pyhocon>=0.3.59", "python-dateutil>=2.8.1", "pytyped-macros>=1.0.1"],
     packages=package_list,
     package_data={package_name: ['py.typed'] for package_name in package_list},
     classifiers=[
