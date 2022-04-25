@@ -13,8 +13,8 @@ setuptools.setup(
     description="Type-Driven Development for Python: Automatic Extraction of HOCON Parsers for Python Types",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/stasharrofi/pytyped/pytyped-hocon",
-    install_requires=["pyhocon>=0.3.59", "python-dateutil>=2.8.1", "pytyped-macros>=1.0.0"],
+    url="https://github.com/stasharrofi/pytyped/tree/master/pytyped-hocon",
+    install_requires=["pyhocon>=0.3.59", "python-dateutil>=2.8.1", "pytyped-macros>=1.0.1"],
     packages=package_list,
     package_data={package_name: ['py.typed'] for package_name in package_list},
     classifiers=[

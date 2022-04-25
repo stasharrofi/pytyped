@@ -14,7 +14,7 @@ setuptools.setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/stasharrofi/pytyped/tree/master/pytyped",
-    install_requires=["pytyped-json>=1.1.0", "pytyped-metrics>=1.0.1"],
+    install_requires=["pytyped-json>=1.1.0", "pytyped-metrics>=1.0.1", "pytyped-hocon>=0.1.0"],
     packages=package_list,
     package_data={package_name: ['py.typed'] for package_name in package_list},
     classifiers=[
