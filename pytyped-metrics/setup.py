@@ -14,7 +14,7 @@ setuptools.setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/stasharrofi/pytyped/tree/master/pytyped-metrics",
-    install_requires=["pytyped-macros>=1.0.1"],
+    install_requires=["pytyped-macros>=2.0.0"],
     packages=package_list,
     package_data={package_name: ['py.typed'] for package_name in package_list},
     classifiers=[
