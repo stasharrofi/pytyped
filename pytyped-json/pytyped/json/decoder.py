@@ -97,6 +97,11 @@ class JsonObjectDecoder(JsonDecoder[T]):
     field_defaults: Dict[str, Union[Boxed[Any], Callable[[], Any]]]
     constructor: Callable[[Dict[str, Any]], T]
 
+    def add_field(self, field_name: str, field_decoder: WithDefault[JsonDecoder[Any]]) -> None:
+        self.field_decoders[field_name] = field_decoder.t
+        if field_decoder.default is not None:
+            self.field_defaults[field_name] = field_decoder.default
+
     def get_constructor(self) -> Callable[[Dict[str, Any]], T]:
         return self.constructor  # type: ignore
 
@@ -144,6 +149,9 @@ class JsonObjectDecoder(JsonDecoder[T]):
 class JsonTupleDecoder(JsonDecoder[Tuple[Any, ...]]):
     field_decoders: List[JsonDecoder[Any]]
 
+    def add_field(self, field_decoder: JsonDecoder[Any]) -> None:
+        self.field_decoders.append(field_decoder)
+
     def decode(self, json: JsValue) -> TOrError[Tuple[Any, ...]]:
         if not isinstance(json, list):
             return [
@@ -180,6 +188,9 @@ class JsonTaggedDecoder(JsonDecoder[Any]):
     branch_decoders: Dict[str, JsonDecoder[Any]]
     tag_field_name: str = "tag"
     value_field_name: Optional[str] = None  # None means the value is in the same object file
+
+    def add_branch(self, tag: str, branch_decoder: JsonDecoder[Any]) -> None:
+        self.branch_decoders[tag] = branch_decoder
 
     def decode(self, json: JsValue) -> TOrError[T]:
         if not isinstance(json, dict):
@@ -249,6 +260,9 @@ class JsonErrorAsDefaultDecoder(JsonDecoder[T]):
 class JsonPriorityDecoder(JsonDecoder[Any]):
     # Decoders in the order of priority. The head of the list has more priority.
     inner_decoders: List[JsonDecoder[Any]]
+
+    def add_branch(self, decoder: JsonDecoder[Any]) -> None:
+        self.inner_decoders.append(decoder)
 
     def decode(self, json: JsValue) -> TOrError[Any]:
         errors: List[JsDecodeError] = []
@@ -540,31 +554,21 @@ class AutoJsonDecoder(Extractor[JsonDecoder[Any]]):
     def basics(self) -> Dict[type, Boxed[JsonDecoder[Any]]]:
         return self.basic_json_decoders
 
-    def named_product_extractor(self, t: type, fields: Dict[str, WithDefault[JsonDecoder[Any]]]) -> JsonDecoder[Any]:
-        field_decoders: Dict[str, JsonDecoder[Any]] = {
-            n: v.t for (n, v) in fields.items()
-        }
-        field_defaults: Dict[str, Union[Boxed[Any], Callable[[], Any]]] = {
-            n: v.default for (n, v) in fields.items() if v.default is not None
-        }
+    def named_product_extractor(self, t: type) -> Tuple[JsonDecoder[Any], Callable[[str, WithDefault[JsonDecoder[Any]]], Any]]:
+        json_object_decoder = JsonObjectDecoder(field_decoders={}, field_defaults={}, constructor=lambda args: t(**args))
+        return json_object_decoder, json_object_decoder.add_field
 
-        return JsonObjectDecoder(
-            field_decoders=field_decoders,
-            field_defaults=field_defaults,
-            constructor=lambda args: t(**args),
-        )
+    def unnamed_product_extractor(self, t: type) -> Tuple[JsonDecoder[Tuple[Any, ...]], Callable[[JsonDecoder[Any]], None]]:
+        json_tuple_decoder = JsonTupleDecoder([])
+        return json_tuple_decoder, json_tuple_decoder.add_field
 
-    def unnamed_product_extractor(self, t: type, fields: List[JsonDecoder[Any]]) -> JsonDecoder[Tuple[Any, ...]]:
-        return JsonTupleDecoder(fields)
+    def named_sum_extractor(self, t: type) -> Tuple[JsonDecoder[Any], Callable[[str, type, JsonDecoder[Any]], None]]:
+        json_tagged_decoder = JsonTaggedDecoder(branch_decoders={}, tag_field_name=t.__name__, value_field_name=None)
+        return json_tagged_decoder, lambda tag, typ, decoder: json_tagged_decoder.add_branch(tag, decoder)
 
-    def named_sum_extractor(self, t: type, branches: Dict[str, Tuple[type, JsonDecoder[Any]]]) -> JsonDecoder[Any]:
-        return JsonTaggedDecoder(
-            branch_decoders={s: t for (s, (_, t)) in branches.items()},
-            tag_field_name=t.__name__, value_field_name=None
-        )
-
-    def unnamed_sum_extractor(self, t: type, branches: List[Tuple[type, JsonDecoder[Any]]]) -> JsonDecoder[Any]:
-        return JsonPriorityDecoder([d for (_, d) in branches])
+    def unnamed_sum_extractor(self, t: type) -> Tuple[JsonDecoder[Any], Callable[[type, JsonDecoder[Any]], None]]:
+        json_priority_decoder = JsonPriorityDecoder([])
+        return json_priority_decoder, lambda typ, decoder: json_priority_decoder.add_branch(decoder)
 
     def optional_extractor(self, t: JsonDecoder[T]) -> JsonDecoder[Optional[T]]:
         return JsonOptionalDecoder(t)

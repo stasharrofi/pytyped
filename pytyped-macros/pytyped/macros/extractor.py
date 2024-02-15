@@ -19,7 +19,6 @@ from typing import TypeVar
 from typing import Union
 
 from pytyped.macros.boxed import Boxed
-from pytyped.macros.pyjack import replace_all_refs
 
 
 @dataclass
@@ -41,6 +40,7 @@ class ExtractorAssignmentException(Exception):
 
 T = TypeVar("T")
 U = TypeVar("U")
+MemoizationKey = Tuple[type, FrozenSet[Tuple[str, type]]]
 
 
 @dataclass
@@ -97,23 +97,27 @@ class Extractor(Generic[T], metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    def named_product_extractor(self, t: type, fields: Dict[str, WithDefault[T]]) -> T:
-        # Given N = {f1: X1, f2: X2, ..., fn: Xn}, T[X1], T[X2], ..., and T[Xn], generates T[N]
+    def named_product_extractor(self, t: type) -> Tuple[T, Callable[[str, WithDefault[T]], None]]:
+        # Given N = {f1: X1, f2: X2, ..., fn: Xn}, T[X1], T[X2], ..., and T[Xn], we want to generate T[N]
+        # But, in order to support recursive types, we need to be able to create this field by field.
         pass
 
     @abstractmethod
-    def unnamed_product_extractor(self, t: type, fields: List[T]) -> T:
-        # Given N = {f1: X1, f2: X2, ..., fn: Xn}, T[X1], T[X2], ..., and T[Xn], generates T[N]
+    def unnamed_product_extractor(self, t: type) -> Tuple[T, Callable[[T], None]]:
+        # Given N = (X1, X2, ..., Xn), T[X1], T[X2], ..., and T[Xn], we want to generate T[N]
+        # But, in order to support recursive types, we need to be able to create this field by field.
         pass
 
     @abstractmethod
-    def named_sum_extractor(self, t: type, branches: Dict[str, Tuple[type, T]]) -> T:
-        # Given mapping tag -> T[X(tag)], generates T[{tag --> X(tag)}]
+    def named_sum_extractor(self, t: type) -> Tuple[T, Callable[[str, type, T], None]]:
+        # Given mapping tag -> T[X(tag)], we want to generate T[{tag --> X(tag)}]
+        # But, in order to support recursive types, we need to be able to create this branch by branch.
         pass
 
     @abstractmethod
-    def unnamed_sum_extractor(self, t: type, branches: List[Tuple[type, T]]) -> T:
-        # Given T[X1] ... T[Xn], generates T[Union[X1, ..., Xn]]
+    def unnamed_sum_extractor(self, t: type) -> Tuple[T, Callable[[type, T], None]]:
+        # Given T[X1] ... T[Xn], we want to generate T[Union[X1, ..., Xn]]
+        # But, in order to support recursive types, we need to be able to create this branch by branch.
         pass
 
     @abstractmethod
@@ -355,6 +359,10 @@ class Extractor(Generic[T], metaclass=ABCMeta):
     def add_custom_functional_type(self, typ: type, value: Callable[[T, ...], T]) -> None:
         self.custom_functional_types[typ] = value
 
+    def _memoize(self, memoization_key: MemoizationKey, extracted: T) -> None:
+        if memoization_key not in self.memoized:
+            self.memoized[memoization_key] = Boxed(extracted)
+
     def _var_to_type(self, var_name: str) -> type:
         if var_name not in self._context:
             raise ExtractorAssignmentException(self._context.copy(), var_name)
@@ -364,49 +372,58 @@ class Extractor(Generic[T], metaclass=ABCMeta):
     def _extract_basic_type(self, t: type) -> Optional[Boxed[T]]:
         return self.basics.get(t)
 
-    def _extract_unnamed_product_type(self, product_type: type) -> Optional[Boxed[T]]:
+    def _extract_unnamed_product_type(self, memoization_key: MemoizationKey, product_type: type) -> Optional[Boxed[T]]:
         maybe_fields = Extractor.extract_if_tuple_type(product_type)
         if maybe_fields is None:
             return None
 
-        fields: List[T] = [self._make(t) for t in maybe_fields]
-        return Boxed(self.unnamed_product_extractor(product_type, fields))
+        result, field_adder = self.unnamed_product_extractor(product_type)
+        self._memoize(memoization_key, result)
+        for t in maybe_fields:
+            field_adder(self._make(t))
+        return Boxed(result)
 
-    def _extract_named_product_type(self, product_type: type) -> Optional[Boxed[T]]:
+    def _extract_named_product_type(self, memoization_key: MemoizationKey, product_type: type) -> Optional[Boxed[T]]:
         maybe_fields = Extractor.extract_if_named_tuple_type(product_type)
         maybe_fields = Extractor.or_else(maybe_fields, lambda: Extractor.extract_if_dataclass_type(product_type))
         if maybe_fields is None:
             return None
 
-        fields: Dict[str, WithDefault[T]] = {
-            n: v.map(self._make) for (n, v) in maybe_fields.items()
-        }
-        return Boxed(self.named_product_extractor(product_type, fields))
+        result, field_adder = self.named_product_extractor(product_type)
+        self._memoize(memoization_key, result)
+        for (n, v) in maybe_fields.items():
+            field_adder(n, v.map(self._make))
+        return Boxed(result)
 
-    def _extract_unnamed_sum_type(self, sum_type: type) -> Optional[Boxed[T]]:
+    def _extract_unnamed_sum_type(self, memoization_key: MemoizationKey, sum_type: type) -> Optional[Boxed[T]]:
         maybe_unnamed_sum_type = Extractor.extract_if_union_type(sum_type)
         if maybe_unnamed_sum_type is None:
             return None
 
-        extracted_branches: List[Tuple[type, T]] = [(t, self._make(t)) for t in maybe_unnamed_sum_type.branches]
         extracted_union: T
-        if len(extracted_branches) == 1:
-            extracted_union = extracted_branches[0][1]
+        if len(maybe_unnamed_sum_type.branches) == 1:
+            extracted_union = self._make(maybe_unnamed_sum_type.branches[0])
+            if maybe_unnamed_sum_type.is_optional:
+                extracted_union = self.optional_extractor(extracted_union)
         else:
-            extracted_union = self.unnamed_sum_extractor(sum_type, extracted_branches)
-        if maybe_unnamed_sum_type.is_optional:
-            extracted_union = self.optional_extractor(extracted_union)
+            extracted_union, branch_adder = self.unnamed_sum_extractor(sum_type)
+            if maybe_unnamed_sum_type.is_optional:
+                extracted_union = self.optional_extractor(extracted_union)
+            self._memoize(memoization_key, extracted_union)
+            for t in maybe_unnamed_sum_type.branches:
+                branch_adder(t, self._make(t))
         return Boxed(extracted_union)
 
-    def _extract_named_sum_type(self, sum_type: type) -> Optional[Boxed[T]]:
+    def _extract_named_sum_type(self, memoization_key: MemoizationKey, sum_type: type) -> Optional[Boxed[T]]:
         maybe_named_sum_type = Extractor.extract_if_has_sub_classes(sum_type)
         if maybe_named_sum_type is None:
             return None
 
-        extracted_branches: Dict[str, Tuple[type, T]] = {
-            s: (t, self._make(t)) for (s, t) in maybe_named_sum_type.branches.items()
-        }
-        return Boxed(self.named_sum_extractor(sum_type, extracted_branches))
+        result, branch_adder = self.named_sum_extractor(sum_type)
+        self._memoize(memoization_key, result)
+        for (s, t) in maybe_named_sum_type.branches.items():
+            branch_adder(s, t, self._make(t))
+        return Boxed(result)
 
     def _extract_list_type(self, list_type: type) -> Optional[Boxed[T]]:
         maybe_list_var_name = Extractor.extract_if_list_type(list_type)
@@ -477,30 +494,25 @@ class Extractor(Generic[T], metaclass=ABCMeta):
                 result.ref_count = result.ref_count + 1
             return result
 
-        recursion_placeholder = RecursiveTypeApplication(0, t_origin, t_assignments)
-        self.memoized[key] = Boxed(recursion_placeholder)
-
         old_context = self._context
         self._context = new_context
 
         result: Optional[Boxed[T]] = None
         result = Extractor.or_else(result, lambda: self._extract_basic_type(t_origin))
-        result = Extractor.or_else(result, lambda: self._extract_unnamed_sum_type(t_origin))
-        result = Extractor.or_else(result, lambda: self._extract_named_sum_type(t_origin))
+        result = Extractor.or_else(result, lambda: self._extract_unnamed_sum_type(key, t_origin))
+        result = Extractor.or_else(result, lambda: self._extract_named_sum_type(key, t_origin))
         result = Extractor.or_else(result, lambda: self._extract_list_type(t_origin))
         result = Extractor.or_else(result, lambda: self._extract_dictionary_type(t_origin))
         result = Extractor.or_else(result, lambda: self._extract_custom_functional_type(t_origin))
-        result = Extractor.or_else(result, lambda: self._extract_unnamed_product_type(t_origin))
-        result = Extractor.or_else(result, lambda: self._extract_named_product_type(t_origin))
+        result = Extractor.or_else(result, lambda: self._extract_unnamed_product_type(key, t_origin))
+        result = Extractor.or_else(result, lambda: self._extract_named_product_type(key, t_origin))
         result = Extractor.or_else(result, lambda: self._extract_enum_type(t_origin))
 
         if result is None:
             raise UnknownExtractorException(t_origin)
 
-        if recursion_placeholder.ref_count > 0:
-            replace_all_refs(recursion_placeholder, result.t)
         self._context = old_context
-        self.memoized[key] = result
+        self._memoize(key, result.t)
         return result.t
 
     def extract(self, in_typ: type) -> T:

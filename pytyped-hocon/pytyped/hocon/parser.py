@@ -103,6 +103,11 @@ class HoconObjectParser(HoconParser[T]):
     field_defaults: Dict[str, Union[Boxed[Any], Callable[[], Any]]]
     constructor: Callable[[Dict[str, Any]], T]
 
+    def add_field(self, field_name: str, field_parser: WithDefault[HoconParser[Any]]) -> None:
+        self.field_parsers[field_name] = field_parser.t
+        if field_parser.default is not None:
+            self.field_defaults[field_name] = field_parser.default
+
     def parse(self, hocon: HoconValue) -> TOrError[T]:
         if not isinstance(hocon, ConfigTree):
             return [
@@ -143,6 +148,9 @@ class HoconObjectParser(HoconParser[T]):
 class HoconTupleParser(HoconParser[Tuple[Any, ...]]):
     field_parsers: List[HoconParser[Any]]
 
+    def add_field(self, field_parser: HoconParser[Any]) -> None:
+        self.field_parsers.append(field_parser)
+
     def parse(self, hocon: HoconValue) -> TOrError[Tuple[Any, ...]]:
         if not isinstance(hocon, list):
             return [HoconParseErrorFinal(f"Expected a Hocon array but received something of type {type(hocon)}.")]
@@ -173,6 +181,9 @@ class HoconTaggedParser(HoconParser[Any]):
     branch_parsers: Dict[str, HoconParser[Any]]
     tag_field_name: str = "tag"
     value_field_name: Optional[str] = None  # None means the value is in the same object file
+
+    def add_branch(self, tag: str, parser: HoconParser[Any]) -> None:
+        self.branch_parsers[tag] = parser
 
     def parse(self, hocon: HoconValue) -> TOrError[T]:
         if not isinstance(hocon, ConfigTree):
@@ -234,6 +245,9 @@ class HoconErrorAsDefaultParser(HoconParser[T]):
 class HoconPriorityParser(HoconParser[Any]):
     # Parsers in the order of priority. The head of the list has more priority.
     inner_parsers: List[HoconParser[Any]]
+
+    def add_branch(self, parser: HoconParser[Any]) -> None:
+        self.inner_parsers.append(parser)
 
     def parse(self, hocon: HoconValue) -> TOrError[Any]:
         errors: List[HoconParseError] = []
@@ -473,31 +487,21 @@ class AutoHoconParser(Extractor[HoconParser[Any]]):
     def basics(self) -> Dict[type, Boxed[HoconParser[Any]]]:
         return self.basic_hocon_parsers
 
-    def named_product_extractor(self, t: type, fields: Dict[str, WithDefault[HoconParser[Any]]]) -> HoconParser[Any]:
-        field_parsers: Dict[str, HoconParser[Any]] = {
-            n: v.t for (n, v) in fields.items()
-        }
-        field_defaults: Dict[str, Union[Boxed[Any], Callable[[], Any]]] = {
-            n: v.default for (n, v) in fields.items() if v.default is not None
-        }
+    def named_product_extractor(self, t: type) -> Tuple[HoconParser[Any], Callable[[str, WithDefault[HoconParser[Any]]], None]]:
+        hocon_object_parser = HoconObjectParser(field_parsers={}, field_defaults={}, constructor=lambda args: t(**args), )
+        return hocon_object_parser, hocon_object_parser.add_field
 
-        return HoconObjectParser(
-            field_parsers=field_parsers,
-            field_defaults=field_defaults,
-            constructor=lambda args: t(**args),
-        )
+    def unnamed_product_extractor(self, t: type) -> Tuple[HoconParser[Tuple[Any, ...]], Callable[[HoconParser[Any]], None]]:
+        tuple_parser = HoconTupleParser([])
+        return tuple_parser, tuple_parser.add_field
 
-    def unnamed_product_extractor(self, t: type, fields: List[HoconParser[Any]]) -> HoconParser[Tuple[Any, ...]]:
-        return HoconTupleParser(fields)
+    def named_sum_extractor(self, t: type) -> Tuple[HoconParser[Any], Callable[[str, type, HoconParser[Any]], None]]:
+        hocon_tagged_parser = HoconTaggedParser(branch_parsers={}, tag_field_name=t.__name__, value_field_name=None)
+        return hocon_tagged_parser, lambda name, typ, parser: hocon_tagged_parser.add_branch(name, parser)
 
-    def named_sum_extractor(self, t: type, branches: Dict[str, Tuple[type, HoconParser[Any]]]) -> HoconParser[Any]:
-        return HoconTaggedParser(
-            branch_parsers={s: t for (s, (_, t)) in branches.items()},
-            tag_field_name=t.__name__, value_field_name=None
-        )
-
-    def unnamed_sum_extractor(self, t: type, branches: List[Tuple[type, HoconParser[Any]]]) -> HoconParser[Any]:
-        return HoconPriorityParser([d for (_, d) in branches])
+    def unnamed_sum_extractor(self, t: type) -> Tuple[HoconParser[Any], Callable[[type, HoconParser[Any]], None]]:
+        hocon_priority_parser = HoconPriorityParser([])
+        return hocon_priority_parser, lambda typ, parser: hocon_priority_parser.add_branch(parser)
 
     def optional_extractor(self, t: HoconParser[T]) -> HoconParser[Optional[T]]:
         return HoconOptionalParser(t)

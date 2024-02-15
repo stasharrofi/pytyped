@@ -43,6 +43,9 @@ class JsonEncoder(Generic[T], metaclass=ABCMeta):
 class JsonObjectEncoder(JsonEncoder[T]):
     field_encoders: Dict[str, JsonEncoder[Any]]
 
+    def add_field(self, field_name: str, field_encoder: JsonEncoder[Any]) -> None:
+        self.field_encoders[field_name] = field_encoder
+
     def encode(self, t: T) -> JsValue:
         d: Dict[str, Any]
         if hasattr(t, "_asdict"):
@@ -60,6 +63,9 @@ class JsonObjectEncoder(JsonEncoder[T]):
 class JsonTupleEncoder(JsonEncoder[Tuple[Any, ...]]):
     field_encoders: List[JsonEncoder[Any]]
 
+    def add_field(self, field_encoder: JsonEncoder[Any]) -> None:
+        self.field_encoders.append(field_encoder)
+
     def encode(self, t: Tuple[Any, ...]) -> JsValue:
         return [e.encode(v) for (v, e) in zip(t, self.field_encoders)]
 
@@ -69,6 +75,9 @@ class JsonTaggedEncoder(JsonEncoder[T]):
     branches: Dict[str, Tuple[type, JsonEncoder[Any]]]
     tag_field_name: str = "tag"
     value_field_name: Optional[str] = None
+
+    def add_branch(self, branch_name: str, branch_type: type, encoder: JsonEncoder[Any]) -> None:
+        self.branches[branch_name] = (branch_type, encoder)
 
     def encode(self, t: T) -> JsValue:
         for branch_name, (branch_type, encoder) in self.branches.items():
@@ -87,6 +96,9 @@ class JsonTaggedEncoder(JsonEncoder[T]):
 @dataclass
 class JsonPriorityEncoder(JsonEncoder[T]):
     branches: List[Tuple[type, JsonEncoder[Any]]]
+
+    def add_branch(self, branch_type: type, encoder: JsonEncoder[Any]) -> None:
+        self.branches.append((branch_type, encoder))
 
     def encode(self, t: T) -> JsValue:
         for branch_type, encoder in self.branches:
@@ -221,24 +233,21 @@ class AutoJsonEncoder(Extractor[JsonEncoder[Any]]):
     def basics(self) -> Dict[type, Boxed[JsonEncoder[Any]]]:
         return self.basic_encoders
 
-    def named_product_extractor(self, t: type, fields: Dict[str, WithDefault[JsonEncoder[Any]]]) -> JsonEncoder[Any]:
-        field_encoders: Dict[str, JsonEncoder[Any]] = {
-            n: v.t for (n, v) in fields.items()
-        }
-        return JsonObjectEncoder(field_encoders=field_encoders)
+    def named_product_extractor(self, t: type) -> Tuple[JsonEncoder[Any], Callable[[str, WithDefault[JsonEncoder[Any]]], None]]:
+        json_object_encoder = JsonObjectEncoder(field_encoders={})
+        return json_object_encoder, lambda name, encoder: json_object_encoder.add_field(name, encoder.t)
 
-    def unnamed_product_extractor(self, t: type, fields: List[JsonEncoder[Any]]) -> JsonEncoder[Tuple[Any, ...]]:
-        return JsonTupleEncoder(fields)
+    def unnamed_product_extractor(self, t: type) -> Tuple[JsonEncoder[Tuple[Any, ...]], Callable[[JsonEncoder[Any]], None]]:
+        json_tuple_encoder = JsonTupleEncoder([])
+        return json_tuple_encoder, json_tuple_encoder.add_field
 
-    def named_sum_extractor(self, t: type, branches: Dict[str, Tuple[type, JsonEncoder[Any]]]) -> JsonEncoder[Any]:
-        return JsonTaggedEncoder(
-            branches=branches,
-            tag_field_name=t.__name__,
-            value_field_name=None
-        )
+    def named_sum_extractor(self, t: type) -> Tuple[JsonEncoder[Any], Callable[[str, type, JsonEncoder[Any]], None]]:
+        json_tagged_encoder = JsonTaggedEncoder(branches={}, tag_field_name=t.__name__, value_field_name=None)
+        return json_tagged_encoder, json_tagged_encoder.add_branch
 
-    def unnamed_sum_extractor(self, t: type, branches: List[Tuple[type, JsonEncoder[Any]]]) -> JsonEncoder[Any]:
-        return JsonPriorityEncoder(branches)
+    def unnamed_sum_extractor(self, t: type) -> Tuple[JsonEncoder[Any], Callable[[type, JsonEncoder[Any]], None]]:
+        json_priority_encoder = JsonPriorityEncoder([])
+        return json_priority_encoder, json_priority_encoder.add_branch
 
     def optional_extractor(self, t: JsonEncoder[T]) -> JsonEncoder[Optional[T]]:
         return JsonOptionalEncoder(t)

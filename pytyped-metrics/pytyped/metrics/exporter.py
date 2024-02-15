@@ -5,7 +5,7 @@ from datetime import date
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
-from typing import Any
+from typing import Any, Callable
 from typing import Dict
 from typing import Generic
 from typing import List
@@ -98,6 +98,9 @@ class DateTimeExporter(MetricsExporter[datetime]):
 class NamedProductExporter(MetricsExporter[T]):
     field_exporters: Dict[str, MetricsExporter[Any]]
 
+    def add_field(self, name: str, exporter: MetricsExporter[Any]) -> None:
+        self.field_exporters[name] = exporter
+
     def outer_tags(self, names: List[str], t: T) -> Dict[str, str]:
         return {}
 
@@ -126,6 +129,9 @@ class NamedProductExporter(MetricsExporter[T]):
 class TupleExporter(MetricsExporter[Tuple[Any, ...]]):
     exporters: List[MetricsExporter[Any]]
 
+    def add_field(self, exporter: MetricsExporter[Any]) -> None:
+        self.exporters.append(exporter)
+
     def outer_tags(self, names: List[str], t: Tuple[Any, ...]) -> Dict[str, str]:
         return {}
 
@@ -149,6 +155,9 @@ class TaggedExporter(MetricsExporter[T]):
     branches: Dict[str, Tuple[type, MetricsExporter[Any]]]
     tag_tag: str
 
+    def add_branch(self, name: str, branch_type: type, exporter: MetricsExporter[Any]) -> None:
+        self.branches[name] = (branch_type, exporter)
+
     def outer_tags(self, names: List[str], t: T) -> Dict[str, str]:
         return {}
 
@@ -164,6 +173,9 @@ class TaggedExporter(MetricsExporter[T]):
 @dataclass
 class PriorityExporter(MetricsExporter[T]):
     branches: List[Tuple[type, MetricsExporter[Any]]]
+
+    def add_branch(self, branch_type: type, exporter: MetricsExporter[Any]) -> None:
+        self.branches.append((branch_type, exporter))
 
     def outer_tags(self, names: List[str], t: T) -> Dict[str, str]:
         return {}
@@ -225,25 +237,21 @@ class AutoMetricExporter(Extractor[MetricsExporter[Any]]):
     def basics(self) -> Dict[type, Boxed[MetricsExporter[Any]]]:
         return self._basics
 
-    def named_product_extractor(
-        self,
-        t: type,
-        fields: Dict[str, WithDefault[MetricsExporter[Any]]]
-    ) -> MetricsExporter[Any]:
-        return NamedProductExporter(field_exporters={f_name: f_exporter.t for f_name, f_exporter in fields.items()})
+    def named_product_extractor(self, t: type) -> Tuple[MetricsExporter[Any], Callable[[str, WithDefault[MetricsExporter[Any]]], None]]:
+        named_product_exporter = NamedProductExporter(field_exporters={})
+        return named_product_exporter, lambda name, exporter: named_product_exporter.add_field(name, exporter.t)
 
-    def unnamed_product_extractor(self, t: type, fields: List[MetricsExporter[Any]]) -> MetricsExporter[Any]:
-        return TupleExporter(fields)
+    def unnamed_product_extractor(self, t: type) -> Tuple[MetricsExporter[Any], Callable[[MetricsExporter[Any]], None]]:
+        tuple_exporter = TupleExporter([])
+        return tuple_exporter, tuple_exporter.add_field
 
-    def named_sum_extractor(
-        self,
-        t: type,
-        branches: Dict[str, Tuple[type, MetricsExporter[Any]]]
-    ) -> MetricsExporter[Any]:
-        return TaggedExporter(branches=branches, tag_tag=t.__name__)
+    def named_sum_extractor(self, t: type) -> Tuple[MetricsExporter[Any], Callable[[str, type, MetricsExporter[Any]], None]]:
+        tagged_exporter = TaggedExporter(branches={}, tag_tag=t.__name__)
+        return tagged_exporter, tagged_exporter.add_branch
 
-    def unnamed_sum_extractor(self, t: type, branches: List[Tuple[type, MetricsExporter[Any]]]) -> MetricsExporter[Any]:
-        return PriorityExporter(branches=branches)
+    def unnamed_sum_extractor(self, t: type) -> Tuple[MetricsExporter[Any], Callable[[type, MetricsExporter[Any]], None]]:
+        priority_exporter = PriorityExporter(branches=[])
+        return priority_exporter, priority_exporter.add_branch
 
     def optional_extractor(self, t: MetricsExporter[Any]) -> MetricsExporter[Any]:
         return OptionalExporter(t)
