@@ -7,14 +7,14 @@ package_list = []
 
 setuptools.setup(
     name="pytyped",
-    version="1.2.0",
+    version="2.0.0",
     author="Shahab Tasharrofi",
     author_email="shahab.tasharrofi@gmail.com",
     description="Type-Driven Development for Python",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/stasharrofi/pytyped/tree/master/pytyped",
-    install_requires=["pytyped-json>=1.2.0", "pytyped-metrics>=1.0.1", "pytyped-hocon>=0.2.0"],
+    install_requires=["pytyped-json>=2.0.0", "pytyped-metrics>=2.0.0", "pytyped-hocon>=1.0.0"],
     packages=package_list,
     package_data={package_name: ['py.typed'] for package_name in package_list},
     classifiers=[
