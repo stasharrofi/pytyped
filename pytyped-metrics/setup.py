@@ -7,7 +7,7 @@ package_list = setuptools.find_namespace_packages(include=["pytyped.*"])
 
 setuptools.setup(
     name="pytyped-metrics",
-    version="1.0.1",
+    version="2.0.0",
     author="Shahab Tasharrofi",
     author_email="shahab.tasharrofi@gmail.com",
     description="Type-Driven Development for Python: Automatic Extraction of Metrics for Python Types",
